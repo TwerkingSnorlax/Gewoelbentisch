@@ -1,0 +1,361 @@
+:root {
+  --bg: #1c1814;
+  --panel: #26211c;
+  --panel-2: #2f2923;
+  --border: #3d352d;
+  --text: #ece3d3;
+  --muted: #a8998a;
+  --accent: #e0b56a;
+  --accent-ink: #1c1814;
+  --danger: #c83c32;
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--bg);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Kopfzeile */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  min-height: 56px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.brand svg {
+  width: 26px;
+  height: 26px;
+  stroke-width: 3;
+}
+.brand svg path:last-child {
+  stroke: none;
+}
+
+.map-name {
+  min-width: 80px;
+  width: 200px;
+  flex: 0 1 200px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.map-name:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.actions button,
+.segmented button,
+.block {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.actions button:hover:not(:disabled) {
+  background: var(--panel-2);
+  border-color: var(--border);
+}
+.actions button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.actions button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.actions button.primary:hover {
+  background: #ecc583;
+}
+.actions button.active {
+  background: var(--panel-2);
+  border-color: var(--accent);
+}
+.sep {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+  margin: 0 4px;
+  flex: none;
+}
+
+/* Hauptbereich */
+main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+}
+.tool {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 72px;
+  min-height: 60px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.tool svg {
+  width: 24px;
+  height: 24px;
+}
+.tool:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.tool.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.tools-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px calc(6px + env(safe-area-inset-bottom));
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 44px;
+}
+.hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.size {
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented {
+  display: inline-flex;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 2px;
+}
+.segmented button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.segmented button.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* Einstellungen */
+.settings {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: min(300px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.settings h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.settings .row {
+  display: flex;
+  gap: 8px;
+}
+.settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  flex: 1;
+}
+.settings input[type='number'],
+.settings select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+}
+.settings .check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text);
+  min-height: 40px;
+}
+.settings .check input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+.block {
+  justify-content: center;
+  background: var(--panel-2) !important;
+  border-color: var(--border) !important;
+}
+
+/* Schmale Bildschirme (iPad hochkant, Handy): Werkzeuge unten, kompakte Kopfzeile */
+@media (max-width: 1150px) {
+  .actions .optional,
+  .brand-name {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .actions button:not(.primary) span {
+    display: none;
+  }
+  .actions button {
+    padding: 0 10px;
+  }
+}
+@media (max-width: 700px) {
+  main {
+    flex-direction: column-reverse;
+  }
+  .tools {
+    flex-direction: row;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+  .tool {
+    width: 64px;
+    flex: none;
+  }
+  .tools-sep {
+    width: 1px;
+    height: auto;
+    margin: 0 4px;
+  }
+  .statusbar {
+    padding-bottom: 6px;
+  }
+  .actions span:not(.sep) {
+    display: none;
+  }
+  .map-name {
+    flex: 1 1 auto;
+    width: auto;
+  }
+}
