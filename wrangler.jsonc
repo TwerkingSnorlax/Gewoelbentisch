@@ -1,0 +1,8 @@
+{
+  // Cloudflare Workers mit statischen Dateien: liefert den Build aus dist/ aus
+  "name": "gewoelbentisch",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./dist" },
+  "workers_dev": true,
+  "preview_urls": true
+}

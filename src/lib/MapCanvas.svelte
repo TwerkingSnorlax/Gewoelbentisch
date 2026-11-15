@@ -1,36 +1,62 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
+    clampObject,
     cleanupDoors,
     fillRect,
+    footprint,
     hasDoor,
     inBounds,
     isOpenEdge,
+    newId,
+    objectAt,
     pickEdge,
     setFloor,
     toggleDoor,
     toggleLight,
     type Edge,
     type MapDoc,
+    type MapObject,
+    type Rotation,
   } from './map';
+  import { drawObject, type ObjectType } from './objects';
   import { renderMap } from './render';
-  import type { Tool } from './tools';
+  import { TOOLS, type Tool } from './tools';
 
   interface Props {
     map: MapDoc;
     rev: number;
     tool: Tool;
     eraseMode: boolean;
-    showGrid: boolean;
+    /** Material-Nummer für Raum und Pinsel */
+    material: number;
+    objectType: ObjectType;
+    objectRot: Rotation;
+    selectedId?: string | null;
     /** wird vor der ersten Änderung einer Aktion aufgerufen (für Rückgängig) */
     onbegin: () => void;
     /** wird nach jeder Änderung aufgerufen */
     onchange: () => void;
     /** bricht die laufende Aktion ab (z. B. wenn ein zweiter Finger zum Zoomen dazukommt) */
     oncancel: () => void;
+    /** Werkzeug auf einer gesperrten Ebene benutzt */
+    onlocked?: () => void;
   }
 
-  let { map, rev, tool, eraseMode, showGrid, onbegin, onchange, oncancel }: Props = $props();
+  let {
+    map,
+    rev,
+    tool,
+    eraseMode,
+    material,
+    objectType,
+    objectRot,
+    selectedId = $bindable(null),
+    onbegin,
+    onchange,
+    oncancel,
+    onlocked,
+  }: Props = $props();
 
   /** Feldgröße in Bildschirmpixeln bei Zoom 1 */
   const CELL = 40;
@@ -38,7 +64,7 @@
   const MAX_ZOOM = 6;
 
   type Point = { x: number; y: number };
-  type Mode = 'none' | 'pan' | 'pinch' | 'rect' | 'paint';
+  type Mode = 'none' | 'pan' | 'pinch' | 'rect' | 'paint' | 'move';
 
   let canvas: HTMLCanvasElement;
   let wrap: HTMLDivElement;
@@ -55,9 +81,12 @@
   let rectStart: Point | null = null;
   let rectEnd: Point | null = null;
   let lastCell: Point | null = null;
-  let hoverCell: Point | null = null;
+  let hoverPoint: Point | null = null;
   let hoverEdge: Edge | null = null;
+  let moving: { obj: MapObject; dx: number; dy: number } | null = null;
   let spaceDown = $state(false);
+  /** true, solange die Ansicht eingepasst ist (nicht von Hand gezoomt/verschoben) */
+  let autoFit = true;
 
   function request() {
     if (raf) return;
@@ -69,17 +98,15 @@
 
   $effect(() => {
     // bei Änderungen an Karte oder Ansicht neu zeichnen
-    void [map, rev, tool, eraseMode, showGrid];
+    void [map, rev, tool, eraseMode, objectType, objectRot, selectedId];
     request();
   });
 
-  // Wurde die Karte ersetzt (neu/geöffnet/Größe), Ansicht neu einpassen
-  let lastMap: MapDoc | null = null;
+  // Wurde die Karte in der Größe geändert, Ansicht neu einpassen
   let lastSize = '';
   $effect(() => {
     const size = `${map.width}x${map.height}`;
-    if (lastMap && lastSize !== size) fit();
-    lastMap = map;
+    if (lastSize && lastSize !== size) fit();
     lastSize = size;
   });
 
@@ -91,6 +118,7 @@
     cam.zoom = clamp(Math.min(zx, zy), MIN_ZOOM, MAX_ZOOM);
     cam.x = (view.w - map.width * CELL * cam.zoom) / 2;
     cam.y = (view.h - map.height * CELL * cam.zoom) / 2;
+    autoFit = true;
     request();
   }
 
@@ -107,11 +135,6 @@
     return { x: (p.x - cam.x) / cam.zoom / CELL, y: (p.y - cam.y) / cam.zoom / CELL };
   }
 
-  function toCell(p: Point): Point {
-    const m = toMap(p);
-    return { x: Math.floor(m.x), y: Math.floor(m.y) };
-  }
-
   function begin() {
     if (!began) {
       began = true;
@@ -120,6 +143,7 @@
   }
 
   function zoomAt(p: Point, factor: number) {
+    autoFit = false;
     const z = clamp(cam.zoom * factor, MIN_ZOOM, MAX_ZOOM);
     const mx = (p.x - cam.x) / cam.zoom;
     const my = (p.y - cam.y) / cam.zoom;
@@ -129,8 +153,18 @@
     request();
   }
 
+  /** Position für ein neues Objekt: Zeiger in der Mitte der Fläche */
+  function placementAt(m: Point): { x: number; y: number } {
+    const f = footprint({ type: objectType, rot: objectRot });
+    return {
+      x: clamp(Math.round(m.x - f.w / 2), 0, map.width - f.w),
+      y: clamp(Math.round(m.y - f.h / 2), 0, map.height - f.h),
+    };
+  }
+
   function paintLine(a: Point, b: Point) {
     // Bresenham, damit beim schnellen Ziehen keine Lücken entstehen
+    const value = erasing ? 0 : material;
     let changed = false;
     let x = a.x;
     let y = a.y;
@@ -140,9 +174,9 @@
     const sy = y < b.y ? 1 : -1;
     let err = dx + dy;
     for (;;) {
-      if (inBounds(map, x, y) && (map.floor[y * map.width + x] === 1) === erasing) {
+      if (inBounds(map, x, y) && map.floor[y * map.width + x] !== value) {
         begin();
-        changed = setFloor(map, x, y, !erasing) || changed;
+        changed = setFloor(map, x, y, value) || changed;
       }
       if (x === b.x && y === b.y) break;
       const e2 = 2 * err;
@@ -173,10 +207,11 @@
   }
 
   function cancelAction() {
-    if (began && mode === 'paint') oncancel();
+    if (began && (mode === 'paint' || mode === 'move')) oncancel();
     began = false;
     rectStart = rectEnd = null;
     lastCell = null;
+    moving = null;
   }
 
   function onpointerdown(e: PointerEvent) {
@@ -199,11 +234,39 @@
       return;
     }
 
+    const layer = TOOLS.find((t) => t.id === tool)?.layer;
+    if (layer && (map.layers[layer].locked || !map.layers[layer].visible)) {
+      mode = 'none';
+      onlocked?.();
+      return;
+    }
+
     const m = toMap(p);
     const cell = { x: Math.floor(m.x), y: Math.floor(m.y) };
     const secondary = e.button === 2;
 
     switch (tool) {
+      case 'select': {
+        const hit = objectAt(map, m.x, m.y);
+        selectedId = hit?.id ?? null;
+        if (hit) {
+          mode = 'move';
+          moving = { obj: hit, dx: m.x - hit.x, dy: m.y - hit.y };
+        } else {
+          mode = 'none';
+        }
+        break;
+      }
+      case 'object': {
+        mode = 'none';
+        const pos = placementAt(m);
+        const obj: MapObject = { id: newId(), type: objectType, x: pos.x, y: pos.y, rot: objectRot };
+        begin();
+        map.objects = [...map.objects, obj];
+        selectedId = obj.id;
+        onchange();
+        break;
+      }
       case 'room':
         mode = 'rect';
         erasing = eraseMode !== secondary;
@@ -243,6 +306,7 @@
     if (pointers.has(e.pointerId)) pointers.set(e.pointerId, p);
 
     if (mode === 'pinch' && pointers.size >= 2) {
+      autoFit = false;
       const [a, b] = [...pointers.values()];
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -253,6 +317,7 @@
       return;
     }
     if (mode === 'pan') {
+      autoFit = false;
       cam.x += p.x - panLast.x;
       cam.y += p.y - panLast.y;
       panLast = p;
@@ -263,13 +328,25 @@
     const m = toMap(p);
     const cell = { x: Math.floor(m.x), y: Math.floor(m.y) };
     if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
-      hoverCell = cell;
+      hoverPoint = m;
       hoverEdge = tool === 'door' ? pickEdge(m.x, m.y) : null;
     }
     if (mode === 'rect') rectEnd = cell;
     if (mode === 'paint' && lastCell && (cell.x !== lastCell.x || cell.y !== lastCell.y)) {
       paintLine(lastCell, cell);
       lastCell = cell;
+    }
+    if (mode === 'move' && moving) {
+      const nx = Math.round(m.x - moving.dx);
+      const ny = Math.round(m.y - moving.dy);
+      if (nx !== moving.obj.x || ny !== moving.obj.y) {
+        const before = { x: moving.obj.x, y: moving.obj.y };
+        begin();
+        moving.obj.x = nx;
+        moving.obj.y = ny;
+        clampObject(map, moving.obj);
+        if (before.x !== moving.obj.x || before.y !== moving.obj.y) onchange();
+      }
     }
     request();
   }
@@ -285,11 +362,14 @@
       const x1 = clamp(Math.max(rectStart.x, rectEnd.x), 0, map.width - 1);
       const y0 = clamp(Math.min(rectStart.y, rectEnd.y), 0, map.height - 1);
       const y1 = clamp(Math.max(rectStart.y, rectEnd.y), 0, map.height - 1);
-      const rectInMap = Math.max(rectStart.x, rectEnd.x) >= 0 && Math.min(rectStart.x, rectEnd.x) < map.width
-        && Math.max(rectStart.y, rectEnd.y) >= 0 && Math.min(rectStart.y, rectEnd.y) < map.height;
+      const rectInMap =
+        Math.max(rectStart.x, rectEnd.x) >= 0 &&
+        Math.min(rectStart.x, rectEnd.x) < map.width &&
+        Math.max(rectStart.y, rectEnd.y) >= 0 &&
+        Math.min(rectStart.y, rectEnd.y) < map.height;
       if (rectInMap) {
         onbegin();
-        if (fillRect(map, x0, y0, x1, y1, !erasing)) {
+        if (fillRect(map, x0, y0, x1, y1, erasing ? 0 : material)) {
           cleanupDoors(map);
           onchange();
         } else {
@@ -301,6 +381,7 @@
       mode = 'none';
       rectStart = rectEnd = null;
       lastCell = null;
+      moving = null;
       began = false;
     }
     request();
@@ -314,6 +395,7 @@
     if (e.ctrlKey || looksLikeMouseWheel) {
       zoomAt(p, Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)));
     } else {
+      autoFit = false;
       cam.x -= e.deltaX;
       cam.y -= e.deltaY;
       request();
@@ -322,7 +404,7 @@
 
   function isTyping(e: KeyboardEvent) {
     const el = e.target as HTMLElement | null;
-    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -345,13 +427,25 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.setTransform(dpr * cam.zoom, 0, 0, dpr * cam.zoom, dpr * cam.x, dpr * cam.y);
-    renderMap(ctx, map, { cell: CELL, grid: showGrid, lightMarkers: true });
+    renderMap(ctx, map, { cell: CELL, lightMarkers: true });
 
     const px = 1 / cam.zoom;
     // Kartenrand
     ctx.strokeStyle = 'rgba(224, 181, 106, 0.35)';
     ctx.lineWidth = 2 * px;
     ctx.strokeRect(0, 0, map.width * CELL, map.height * CELL);
+
+    // Auswahl
+    const sel = selectedId ? map.objects.find((o) => o.id === selectedId) : null;
+    if (sel && map.layers.objects.visible) {
+      const f = footprint(sel);
+      ctx.save();
+      ctx.setLineDash([6 * px, 4 * px]);
+      ctx.strokeStyle = '#e0b56a';
+      ctx.lineWidth = 2 * px;
+      ctx.strokeRect(sel.x * CELL - 2 * px, sel.y * CELL - 2 * px, f.w * CELL + 4 * px, f.h * CELL + 4 * px);
+      ctx.restore();
+    }
 
     // Rechteck-Vorschau
     if (mode === 'rect' && rectStart && rectEnd) {
@@ -379,10 +473,25 @@
       ctx.moveTo(e.x * CELL, e.y * CELL);
       ctx.lineTo((e.dir === 'h' ? e.x + 1 : e.x) * CELL, (e.dir === 'h' ? e.y : e.y + 1) * CELL);
       ctx.stroke();
-    } else if (hoverCell && mode !== 'rect' && tool !== 'hand' && inBounds(map, hoverCell.x, hoverCell.y)) {
+    } else if (tool === 'object' && hoverPoint && mode === 'none') {
+      // halbtransparente Vorschau des Objekts
+      const pos = placementAt(hoverPoint);
+      const f = footprint({ type: objectType, rot: objectRot });
+      ctx.save();
+      ctx.globalAlpha = 0.6;
+      drawObject(ctx, objectType, pos.x * CELL, pos.y * CELL, objectRot, CELL);
+      ctx.restore();
       ctx.strokeStyle = 'rgba(224, 181, 106, 0.8)';
       ctx.lineWidth = 2 * px;
-      ctx.strokeRect(hoverCell.x * CELL, hoverCell.y * CELL, CELL, CELL);
+      ctx.strokeRect(pos.x * CELL, pos.y * CELL, f.w * CELL, f.h * CELL);
+    } else if (hoverPoint && mode !== 'rect' && tool !== 'hand' && tool !== 'select') {
+      const cx = Math.floor(hoverPoint.x);
+      const cy = Math.floor(hoverPoint.y);
+      if (inBounds(map, cx, cy)) {
+        ctx.strokeStyle = 'rgba(224, 181, 106, 0.8)';
+        ctx.lineWidth = 2 * px;
+        ctx.strokeRect(cx * CELL, cy * CELL, CELL, CELL);
+      }
     }
   }
 
@@ -390,10 +499,15 @@
     const ro = new ResizeObserver(() => {
       const r = wrap.getBoundingClientRect();
       const first = view.w === 0;
+      // Größenänderung (z. B. Objektpalette, Drehen des iPads): einpassen oder Bildmitte halten
+      if (!first) {
+        cam.x += (r.width - view.w) / 2;
+        cam.y += (r.height - view.h) / 2;
+      }
       view = { w: r.width, h: r.height, dpr: window.devicePixelRatio || 1 };
       canvas.width = Math.round(r.width * view.dpr);
       canvas.height = Math.round(r.height * view.dpr);
-      if (first) fit();
+      if (first || autoFit) fit();
       draw();
     });
     ro.observe(wrap);
@@ -409,7 +523,7 @@
 
 <svelte:window {onkeydown} {onkeyup} />
 
-<div class="wrap" bind:this={wrap} class:panning={tool === 'hand' || spaceDown}>
+<div class="wrap" bind:this={wrap} class:panning={tool === 'hand' || spaceDown} class:pointer={tool === 'select'}>
   <canvas
     bind:this={canvas}
     {onpointerdown}
@@ -417,7 +531,7 @@
     onpointerup={(e) => finish(e, true)}
     onpointercancel={(e) => finish(e, false)}
     onpointerleave={() => {
-      hoverCell = null;
+      hoverPoint = null;
       hoverEdge = null;
       request();
     }}
@@ -436,6 +550,9 @@
   }
   .wrap.panning {
     cursor: grab;
+  }
+  .wrap.pointer {
+    cursor: default;
   }
   canvas {
     position: absolute;

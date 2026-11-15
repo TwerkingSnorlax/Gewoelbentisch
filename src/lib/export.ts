@@ -1,5 +1,6 @@
 // Export als PNG-Bild, Universal-VTT-Datei (.dd2vtt) und Projektdatei.
-import { serialize, wallSegments, type MapDoc } from './map';
+import { allLights, footprint, serialize, wallSegments, type MapDoc } from './map';
+import { OBJECTS } from './objects';
 import { renderMap } from './render';
 
 /** Übliche Auflösung für VTT-Karten (Pixel pro Feld). */
@@ -12,13 +13,13 @@ function exportPixelsPerGrid(m: MapDoc): number {
   return Math.max(16, Math.min(EXPORT_PPG, Math.floor(MAX_CANVAS_SIDE / largest)));
 }
 
-export function renderToCanvas(m: MapDoc, grid: boolean): { canvas: HTMLCanvasElement; ppg: number } {
+export function renderToCanvas(m: MapDoc): { canvas: HTMLCanvasElement; ppg: number } {
   const ppg = exportPixelsPerGrid(m);
   const canvas = document.createElement('canvas');
   canvas.width = m.width * ppg;
   canvas.height = m.height * ppg;
   const ctx = canvas.getContext('2d')!;
-  renderMap(ctx, m, { cell: ppg, grid, lightMarkers: false });
+  renderMap(ctx, m, { cell: ppg, lightMarkers: false });
   return { canvas, ppg };
 }
 
@@ -38,8 +39,8 @@ export function download(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-export async function exportPng(m: MapDoc, grid: boolean, base: string): Promise<void> {
-  const { canvas } = renderToCanvas(m, grid);
+export async function exportPng(m: MapDoc, base: string): Promise<void> {
+  const { canvas } = renderToCanvas(m);
   const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
   if (!blob) throw new Error('PNG konnte nicht erzeugt werden');
   download(blob, `${base}.png`);
@@ -49,8 +50,12 @@ export async function exportPng(m: MapDoc, grid: boolean, base: string): Promise
  * Baut eine Universal-VTT-Datei (Format 0.3, wie Dungeondraft .dd2vtt).
  * Alle Koordinaten sind in Feld-Einheiten.
  */
-export function buildUniversalVtt(m: MapDoc, grid: boolean) {
-  const { canvas, ppg } = renderToCanvas(m, grid);
+export function buildUniversalVtt(m: MapDoc) {
+  const { canvas, ppg } = renderToCanvas(m);
+  const doors = m.layers.doors.visible ? m.doors : [];
+  const lights = m.layers.lights.visible ? allLights(m) : [];
+  // Sichtblockierende Objekte (Säulen, Statuen, Felsen) als geschlossene Umrisse
+  const blockers = m.layers.objects.visible ? m.objects.filter((o) => OBJECTS[o.type].blocksSight) : [];
   const image = canvas.toDataURL('image/png').split(',')[1];
   return {
     format: 0.3,
@@ -63,8 +68,18 @@ export function buildUniversalVtt(m: MapDoc, grid: boolean) {
       { x: s.x1, y: s.y1 },
       { x: s.x2, y: s.y2 },
     ]),
-    objects_line_of_sight: [],
-    portals: m.doors.map((d) =>
+    objects_line_of_sight: blockers.map((o) => {
+      const f = footprint(o);
+      const i = 0.15;
+      return [
+        { x: o.x + i, y: o.y + i },
+        { x: o.x + f.w - i, y: o.y + i },
+        { x: o.x + f.w - i, y: o.y + f.h - i },
+        { x: o.x + i, y: o.y + f.h - i },
+        { x: o.x + i, y: o.y + i },
+      ];
+    }),
+    portals: doors.map((d) =>
       d.dir === 'h'
         ? {
             position: { x: d.x + 0.5, y: d.y },
@@ -88,8 +103,8 @@ export function buildUniversalVtt(m: MapDoc, grid: boolean) {
           },
     ),
     environment: { baked_lighting: false, ambient_light: 'ff404040' },
-    lights: m.lights.map((l) => ({
-      position: { x: l.x + 0.5, y: l.y + 0.5 },
+    lights: lights.map((l) => ({
+      position: { x: l.x, y: l.y },
       range: l.range,
       intensity: 1,
       color: 'ffffd9a0',
@@ -99,8 +114,8 @@ export function buildUniversalVtt(m: MapDoc, grid: boolean) {
   };
 }
 
-export function exportVtt(m: MapDoc, grid: boolean, base: string): void {
-  const data = buildUniversalVtt(m, grid);
+export function exportVtt(m: MapDoc, base: string): void {
+  const data = buildUniversalVtt(m);
   download(new Blob([JSON.stringify(data)], { type: 'application/json' }), `${base}.dd2vtt`);
 }
 
