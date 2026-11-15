@@ -358,3 +358,107 @@ export function deserialize(text: string): MapDoc {
   cleanupDoors(m);
   return m;
 }
+
+/* ---------- Dynamische Größe ---------- */
+
+/** Rand aus Fels, der beim automatischen Wachsen um den Inhalt frei bleibt */
+export const GROW_MARGIN = 2;
+
+/**
+ * Ändert die Kartengröße an allen vier Seiten, ohne das Objekt zu ersetzen (positive Werte fügen
+ * Felder hinzu, negative schneiden ab). Inhalte behalten ihre Lage zueinander; laufende Verweise
+ * (z. B. ein gerade gezogenes Objekt) bleiben gültig.
+ */
+export function growInPlace(m: MapDoc, left: number, top: number, right: number, bottom: number): void {
+  const w = m.width + left + right;
+  const h = m.height + top + bottom;
+  if (w < MIN_SIZE || h < MIN_SIZE || w > MAX_SIZE || h > MAX_SIZE) throw new Error('Ungültige Kartengröße');
+  const floor = new Array(w * h).fill(0);
+  for (let y = 0; y < m.height; y++) {
+    const ny = y + top;
+    if (ny < 0 || ny >= h) continue;
+    for (let x = 0; x < m.width; x++) {
+      const nx = x + left;
+      if (nx >= 0 && nx < w) floor[ny * w + nx] = m.floor[y * m.width + x];
+    }
+  }
+  m.width = w;
+  m.height = h;
+  m.floor = floor;
+  for (const d of m.doors) (d.x += left), (d.y += top);
+  for (const l of m.lights) (l.x += left), (l.y += top);
+  for (const o of m.objects) (o.x += left), (o.y += top);
+  m.lights = m.lights.filter((l) => inBounds(m, l.x, l.y));
+  m.objects = m.objects.filter((o) => {
+    const f = footprint(o);
+    return o.x >= 0 && o.y >= 0 && o.x + f.w <= w && o.y + f.h <= h;
+  });
+  m.doors = m.doors.filter((d) => d.x >= 0 && d.y >= 0 && d.x <= w && d.y <= h);
+  cleanupDoors(m);
+}
+
+/**
+ * Sorgt dafür, dass der Bereich (x0, y0)–(x1, y1) (Felder, einschließlich) mit Rand in die Karte passt.
+ * Gibt zurück, um wie viele Felder sich die Inhalte nach rechts/unten verschoben haben, oder null,
+ * wenn nichts zu tun war. Die Größe bleibt höchstens MAX_SIZE.
+ */
+export function growToFit(m: MapDoc, x0: number, y0: number, x1: number, y1: number, margin = GROW_MARGIN): { dx: number; dy: number } | null {
+  let left = Math.max(0, margin - Math.min(x0, x1));
+  let top = Math.max(0, margin - Math.min(y0, y1));
+  let right = Math.max(0, Math.max(x0, x1) + 1 + margin - m.width);
+  let bottom = Math.max(0, Math.max(y0, y1) + 1 + margin - m.height);
+  if (!left && !top && !right && !bottom) return null;
+  // nicht über die Höchstgröße: zuerst die Seite kürzen, die gerade nicht gebraucht wird
+  const fit = (a: number, b: number, size: number): [number, number] => {
+    let over = size + a + b - MAX_SIZE;
+    if (over <= 0) return [a, b];
+    const cutB = Math.min(b, over);
+    b -= cutB;
+    over -= cutB;
+    return [a - Math.min(a, over), b];
+  };
+  [left, right] = fit(left, right, m.width);
+  [top, bottom] = fit(top, bottom, m.height);
+  if (!left && !top && !right && !bottom) return null;
+  growInPlace(m, left, top, right, bottom);
+  return { dx: left, dy: top };
+}
+
+/** Umrandendes Rechteck aller Inhalte (Boden, Objekte, Lichter) in Feldern, oder null bei leerer Karte */
+export function contentBounds(m: MapDoc): { x0: number; y0: number; x1: number; y1: number } | null {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  const add = (ax: number, ay: number, bx: number, by: number) => {
+    x0 = Math.min(x0, ax);
+    y0 = Math.min(y0, ay);
+    x1 = Math.max(x1, bx);
+    y1 = Math.max(y1, by);
+  };
+  for (let y = 0; y < m.height; y++) for (let x = 0; x < m.width; x++) if (m.floor[y * m.width + x] > 0) add(x, y, x, y);
+  for (const o of m.objects) {
+    const f = footprint(o);
+    add(o.x, o.y, o.x + f.w - 1, o.y + f.h - 1);
+  }
+  for (const l of m.lights) add(l.x, l.y, l.x, l.y);
+  return x0 === Infinity ? null : { x0, y0, x1, y1 };
+}
+
+/** Schneidet die Karte auf ihren Inhalt plus Rand zu. Gibt false zurück, wenn sich nichts ändert. */
+export function trimToContent(m: MapDoc, margin = GROW_MARGIN): boolean {
+  const b = contentBounds(m);
+  if (!b) return false;
+  let left = margin - b.x0;
+  let top = margin - b.y0;
+  let right = b.x1 + 1 + margin - m.width;
+  let bottom = b.y1 + 1 + margin - m.height;
+  // Mindestgröße einhalten (fehlende Felder rechts/unten anfügen)
+  const w = m.width + left + right;
+  const h = m.height + top + bottom;
+  if (w < MIN_SIZE) right += MIN_SIZE - w;
+  if (h < MIN_SIZE) bottom += MIN_SIZE - h;
+  if (!left && !top && !right && !bottom) return false;
+  growInPlace(m, left, top, right, bottom);
+  return true;
+}

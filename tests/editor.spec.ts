@@ -47,13 +47,13 @@ test('Material wählen: Holzboden und Wasser', async ({ page }) => {
   const errors = await open(page);
   const c = (x: number, y: number) => cellPos(page, x, y, SIZE);
   await page.click('[data-material=wood]');
-  await drag(page, await c(1, 1), await c(4, 4));
+  await drag(page, await c(3, 3), await c(6, 6));
   await tool(page, '4');
   await page.click('[data-material=water]');
-  await drag(page, await c(2, 2), await c(3, 2));
+  await drag(page, await c(4, 4), await c(5, 4));
   const m = await stored(page, (m) => m.floor.includes(5));
   const at = (x: number, y: number) => m.floor[y * m.width + x];
-  expect([at(1, 1), at(2, 2), at(3, 2), at(4, 4), at(5, 5)]).toEqual([2, 5, 5, 2, 0]);
+  expect([at(3, 3), at(4, 4), at(5, 4), at(6, 6), at(7, 7)]).toEqual([2, 5, 5, 2, 0]);
   noErrors(errors);
 });
 
@@ -172,5 +172,63 @@ test('Projektdatei speichern und öffnen (auch das alte Format 1)', async ({ pag
   await page.locator('input[type=file]').setInputFiles({ name: 'k.gewoelbe.json', mimeType: 'application/json', buffer: Buffer.from(saved.text) });
   const back = await stored(page, (m) => m.name !== 'Alt');
   expect(back).toEqual(before);
+  noErrors(errors);
+});
+
+test('Karte wächst automatisch beim Zeichnen über den Rand, Ansicht bleibt stehen; Schalter und Zuschneiden', async ({ page }) => {
+  const errors = await open(page);
+  const box = (await page.locator('.wrap > canvas').boundingBox())!;
+  const c = (x: number, y: number) => cellPos(page, x, y, SIZE);
+
+  // nach rechts über den Rand (Zeiger verlässt die Zeichenfläche, das Ziehen läuft weiter)
+  const a = await c(24, 5);
+  await drag(page, a, { x: box.x + box.width + 120, y: (await c(24, 8)).y });
+  let m = await stored(page, (m) => m.width > 30);
+  expect(m.height).toBe(20);
+  const right = Math.round((box.x + box.width + 120 - (a.x - (24.5 * a.cell))) / a.cell - 0.5);
+  expect(m.width).toBe(right + 1 + 2); // Inhalt bis zum Zeiger plus 2 Felder Rand
+  expect(m.floor[5 * m.width + 24]).toBe(1);
+
+  // nach links oben über den Rand: Inhalte rutschen nach rechts unten, Bildschirm bleibt stehen
+  const before = m;
+  const b = await c(4, 4);
+  await drag(page, b, { x: b.x - 6 * b.cell, y: b.y - 6 * b.cell });
+  m = await stored(page, (m) => m.height > 20);
+  const dx = m.width - before.width - 0; // rechts kam nichts dazu
+  const dy = m.height - before.height;
+  expect([dx, dy]).toEqual([2 - (4 - 6), 2 - (4 - 6)]);
+  expect(m.floor[(5 + dy) * m.width + 24 + dx]).toBe(1); // erster Raum ist mitgewandert
+  // dieselbe Bildschirmstelle trifft nach dem Wachsen dasselbe Feld wie vorher
+  await page.keyboard.press('7'); // ohne Einpassen
+  await page.mouse.click(b.x, b.y);
+  m = await stored(page, (m) => m.lights.length === 1);
+  expect(m.lights[0]).toMatchObject({ x: 4 + dx, y: 4 + dy });
+
+  // Schalter aus: kein Wachsen mehr
+  await page.click('#btnSettings');
+  await page.uncheck('#autoGrow');
+  await page.keyboard.press('Escape');
+  const w0 = m.width;
+  await page.keyboard.press('3');
+  await drag(page, b, { x: box.x + 3, y: b.y });
+  await page.waitForTimeout(600);
+  m = await stored(page);
+  expect(m.width).toBe(w0);
+
+  // Zuschneiden: Inhalt plus 2 Felder Rand
+  await page.click('#btnSettings');
+  await page.click('#trimMap');
+  const margins = (m: any) => {
+    const cols = [...Array(m.width).keys()].filter((x) => [...Array(m.height).keys()].some((y) => m.floor[y * m.width + x] > 0));
+    const rows = [...Array(m.height).keys()].filter((y) => [...Array(m.width).keys()].some((x) => m.floor[y * m.width + x] > 0));
+    return [cols[0], rows[0], m.width - 1 - cols.at(-1)!, m.height - 1 - rows.at(-1)!].join();
+  };
+  const h0 = m.height;
+  expect(margins(m)).not.toBe('2,2,2,2'); // vorher: unten rechts zu viel Rand, links keiner
+  m = await stored(page, (m) => margins(m) === '2,2,2,2');
+  // Rückgängig stellt die Größe wieder her
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+z');
+  await stored(page, (m) => m.width === w0 && m.height === h0);
   noErrors(errors);
 });

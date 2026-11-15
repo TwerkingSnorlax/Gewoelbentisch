@@ -5,6 +5,7 @@
     cleanupDoors,
     fillRect,
     footprint,
+    growToFit,
     hasDoor,
     inBounds,
     isOpenEdge,
@@ -33,6 +34,8 @@
     objectType: ObjectType;
     objectRot: Rotation;
     selectedId?: string | null;
+    /** Karte wächst automatisch, wenn über den Rand hinaus gezeichnet wird */
+    autoGrow?: boolean;
     /** wird vor der ersten Änderung einer Aktion aufgerufen (für Rückgängig) */
     onbegin: () => void;
     /** wird nach jeder Änderung aufgerufen */
@@ -52,6 +55,7 @@
     objectType,
     objectRot,
     selectedId = $bindable(null),
+    autoGrow = false,
     onbegin,
     onchange,
     oncancel,
@@ -102,13 +106,43 @@
     request();
   });
 
-  // Wurde die Karte in der Größe geändert, Ansicht neu einpassen
+  // Wurde die Karte durch eine andere ersetzt (Rückgängig, Öffnen …) und hat eine andere Größe,
+  // Ansicht neu einpassen. Automatisches Wachsen ändert dieselbe Karte und hält die Ansicht.
+  let lastMap: MapDoc | null = null;
   let lastSize = '';
   $effect(() => {
+    void rev;
     const size = `${map.width}x${map.height}`;
-    if (lastSize && lastSize !== size) fit();
+    if (lastMap && lastMap !== map && lastSize !== size) fit();
+    lastMap = map;
     lastSize = size;
   });
+
+  /**
+   * Schafft Platz für den Bereich (Felder, einschließlich), wenn automatisches Wachsen an ist.
+   * Die Ansicht wird mitverschoben, damit die Karte auf dem Bildschirm still steht.
+   * Gibt zurück, um wie viel sich Feld-Koordinaten verschoben haben.
+   */
+  function makeRoom(x0: number, y0: number, x1: number, y1: number): { dx: number; dy: number } {
+    const none = { dx: 0, dy: 0 };
+    if (!autoGrow) return none;
+    const w = map.width;
+    const h = map.height;
+    const needed = Math.min(x0, x1) < 2 || Math.min(y0, y1) < 2 || Math.max(x0, x1) + 3 > w || Math.max(y0, y1) + 3 > h;
+    if (!needed) return none;
+    begin();
+    const moved = growToFit(map, x0, y0, x1, y1);
+    if (!moved) return none;
+    cam.x -= moved.dx * CELL * cam.zoom;
+    cam.y -= moved.dy * CELL * cam.zoom;
+    autoFit = false;
+    const shift = (p: Point | null) => p && { x: p.x + moved.dx, y: p.y + moved.dy };
+    rectStart = shift(rectStart);
+    rectEnd = shift(rectEnd);
+    lastCell = shift(lastCell);
+    onchange();
+    return moved;
+  }
 
   export function fit() {
     if (!view.w || !view.h) return;
@@ -156,15 +190,22 @@
   /** Position für ein neues Objekt: Zeiger in der Mitte der Fläche */
   function placementAt(m: Point): { x: number; y: number } {
     const f = footprint({ type: objectType, rot: objectRot });
+    if (autoGrow) return { x: Math.round(m.x - f.w / 2), y: Math.round(m.y - f.h / 2) };
     return {
       x: clamp(Math.round(m.x - f.w / 2), 0, map.width - f.w),
       y: clamp(Math.round(m.y - f.h / 2), 0, map.height - f.h),
     };
   }
 
-  function paintLine(a: Point, b: Point) {
+  /** Malt von a nach b; gibt b zurück (verschoben, falls die Karte gewachsen ist) */
+  function paintLine(a: Point, b: Point): Point {
     // Bresenham, damit beim schnellen Ziehen keine Lücken entstehen
     const value = erasing ? 0 : material;
+    if (!erasing) {
+      const { dx: gx, dy: gy } = makeRoom(a.x, a.y, b.x, b.y);
+      a = { x: a.x + gx, y: a.y + gy };
+      b = { x: b.x + gx, y: b.y + gy };
+    }
     let changed = false;
     let x = a.x;
     let y = a.y;
@@ -193,6 +234,7 @@
       cleanupDoors(map);
       onchange();
     }
+    return b;
   }
 
   function startPinch() {
@@ -260,6 +302,10 @@
       case 'object': {
         mode = 'none';
         const pos = placementAt(m);
+        const f = footprint({ type: objectType, rot: objectRot });
+        const g = makeRoom(pos.x, pos.y, pos.x + f.w - 1, pos.y + f.h - 1);
+        pos.x += g.dx;
+        pos.y += g.dy;
         const obj: MapObject = { id: newId(), type: objectType, x: pos.x, y: pos.y, rot: objectRot };
         begin();
         map.objects = [...map.objects, obj];
@@ -276,8 +322,7 @@
       case 'eraser':
         mode = 'paint';
         erasing = tool === 'eraser' || secondary;
-        lastCell = cell;
-        paintLine(cell, cell);
+        lastCell = paintLine(cell, cell);
         break;
       case 'door': {
         mode = 'none';
@@ -289,14 +334,18 @@
         }
         break;
       }
-      case 'light':
+      case 'light': {
         mode = 'none';
+        const g = makeRoom(cell.x, cell.y, cell.x, cell.y);
+        cell.x += g.dx;
+        cell.y += g.dy;
         if (inBounds(map, cell.x, cell.y)) {
           begin();
           toggleLight(map, cell.x, cell.y);
           onchange();
         }
         break;
+      }
     }
     request();
   }
@@ -333,13 +382,16 @@
     }
     if (mode === 'rect') rectEnd = cell;
     if (mode === 'paint' && lastCell && (cell.x !== lastCell.x || cell.y !== lastCell.y)) {
-      paintLine(lastCell, cell);
-      lastCell = cell;
+      lastCell = paintLine(lastCell, cell);
     }
     if (mode === 'move' && moving) {
-      const nx = Math.round(m.x - moving.dx);
-      const ny = Math.round(m.y - moving.dy);
+      let nx = Math.round(m.x - moving.dx);
+      let ny = Math.round(m.y - moving.dy);
       if (nx !== moving.obj.x || ny !== moving.obj.y) {
+        const f = footprint(moving.obj);
+        const g = makeRoom(nx, ny, nx + f.w - 1, ny + f.h - 1);
+        nx += g.dx;
+        ny += g.dy;
         const before = { x: moving.obj.x, y: moving.obj.y };
         begin();
         moving.obj.x = nx;
@@ -358,6 +410,11 @@
       return;
     }
     if (mode === 'rect' && rectStart && rectEnd && commit) {
+      onbegin();
+      began = true;
+      const lastW = map.width;
+      const lastH = map.height;
+      if (!erasing) makeRoom(rectStart.x, rectStart.y, rectEnd.x, rectEnd.y);
       const x0 = clamp(Math.min(rectStart.x, rectEnd.x), 0, map.width - 1);
       const x1 = clamp(Math.max(rectStart.x, rectEnd.x), 0, map.width - 1);
       const y0 = clamp(Math.min(rectStart.y, rectEnd.y), 0, map.height - 1);
@@ -368,13 +425,14 @@
         Math.max(rectStart.y, rectEnd.y) >= 0 &&
         Math.min(rectStart.y, rectEnd.y) < map.height;
       if (rectInMap) {
-        onbegin();
         if (fillRect(map, x0, y0, x1, y1, erasing ? 0 : material)) {
           cleanupDoors(map);
           onchange();
-        } else {
+        } else if (map.width === lastW && map.height === lastH) {
           oncancel();
         }
+      } else {
+        oncancel();
       }
     }
     if (pointers.size === 0) {

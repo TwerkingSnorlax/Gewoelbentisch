@@ -26,6 +26,9 @@ z. B. für Encounter+ oder Foundry VTT.
 - **Zufallsgenerator:** erzeugt eine komplette Karte im gewählten Stil mit Räumen, Gängen, Türen, Licht und Einrichtung.
   Gleicher Startwert ergibt dieselbe Karte.
 - Wände entstehen automatisch an den Rändern der Bodenflächen.
+- **Karte wächst automatisch** (Karte → Schalter, Vorgabe an): Wer über den Rand hinaus malt, einen Raum zieht oder
+  Objekte und Lichter setzt, vergrößert die Karte in diese Richtung (auch nach links/oben, bis 200 Felder), mit
+  2 Feldern Rand. Die Ansicht bleibt dabei stehen. „Auf Inhalt zuschneiden“ entfernt überflüssigen Rand.
 - Zoomen mit Mausrad, Trackpad oder zwei Fingern. `F` passt die Karte ein, `G` schaltet das Raster um.
 - Rückgängig/Wiederholen: `Strg/⌘ + Z`, `Strg/⌘ + Y` (bzw. `Strg/⌘ + Shift + Z`).
 - Speichern/Öffnen als Projektdatei (`.gewoelbe.json`), `Strg/⌘ + S` / `Strg/⌘ + O`.

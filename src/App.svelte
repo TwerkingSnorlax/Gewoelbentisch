@@ -16,6 +16,7 @@
     rotateObject,
     serialize,
     clampObject,
+    trimToContent,
     STYLES,
     MAX_SIZE,
     MIN_SIZE,
@@ -62,6 +63,26 @@
   let fileInput: HTMLInputElement;
   let updating = $state(false);
 
+  // Karte wächst automatisch beim Zeichnen über den Rand (Einstellung je Gerät)
+  const AUTOGROW_KEY = 'gewoelbentisch.autoGrow';
+  let autoGrow = $state(
+    (() => {
+      try {
+        return localStorage.getItem(AUTOGROW_KEY) !== '0';
+      } catch {
+        return true;
+      }
+    })(),
+  );
+  function setAutoGrow(v: boolean) {
+    autoGrow = v;
+    try {
+      localStorage.setItem(AUTOGROW_KEY, v ? '1' : '0');
+    } catch {
+      /* ignorieren */
+    }
+  }
+
   // Verlauf für Rückgängig/Wiederholen (als Schnappschüsse; Karten sind klein)
   let undoStack: string[] = [];
   let redoStack: string[] = [];
@@ -106,6 +127,9 @@
 
   function onchange() {
     rev++;
+    // die Karte kann beim Zeichnen gewachsen sein
+    widthInput = map.width;
+    heightInput = map.height;
     scheduleAutosave();
   }
 
@@ -152,6 +176,18 @@
     if (w === map.width && h === map.height) return;
     pushHistory();
     replaceMap(resizeMap(map, w, h));
+    canvasRef?.fit();
+  }
+
+  function trim() {
+    pushHistory();
+    if (trimToContent(map)) {
+      onchange();
+      canvasRef?.fit();
+    } else {
+      undoStack.pop();
+      historyRev++;
+    }
   }
 
   function setStyle(style: StyleId) {
@@ -260,7 +296,14 @@
 
   function onkeydown(e: KeyboardEvent) {
     const el = e.target as HTMLElement | null;
-    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return;
+    const typing = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+    // Escape schließt das offene Fenster auch, wenn darin gerade ein Feld den Fokus hat
+    if (e.key === 'Escape' && panel) {
+      panel = null;
+      el?.blur?.();
+      return;
+    }
+    if (typing) return;
     const mod = e.ctrlKey || e.metaKey;
     const key = e.key.toLowerCase();
     if (mod && key === 'z') {
@@ -422,6 +465,7 @@
           material={materialId(material)}
           {objectType}
           {objectRot}
+          {autoGrow}
           onbegin={pushHistory}
           {onchange}
           {oncancel}
@@ -505,6 +549,12 @@
             </label>
           </div>
           <button class="block" onclick={applySize}>{$t('settings.apply')}</button>
+          <label class="check">
+            <input id="autoGrow" type="checkbox" checked={autoGrow} onchange={(e) => setAutoGrow(e.currentTarget.checked)} />
+            {$t('settings.autoGrow')}
+          </label>
+          <p class="note">{$t('settings.autoGrow.note')}</p>
+          <button id="trimMap" class="block" onclick={trim}>{$t('settings.trim')}</button>
           <label>
             {$t('style.label')}
             <select id="styleSelect" value={mapStyle} onchange={(e) => setStyle(e.currentTarget.value as StyleId)}>

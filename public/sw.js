@@ -32,7 +32,16 @@ async function fetchClean(u) {
   return r.redirected ? new Response(await r.blob(), { status: 200, headers: r.headers }) : r;
 }
 
-async function refreshPage() {
+/** Meldung an ein Fenster, das gerade erst lädt: warten, bis es existiert (höchstens ~5 s) */
+async function tellWhenReady(clientId) {
+  for (let i = 0; i < 20; i++) {
+    const c = await self.clients.get(clientId);
+    if (c) return c.postMessage({ type: 'updated' });
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
+async function refreshPage(clientId) {
   try {
     const c = await caches.open(APP);
     const old = await c.match('./');
@@ -41,7 +50,10 @@ async function refreshPage() {
     const b = await fresh.clone().text();
     if (a === b) return;
     await c.put('./', fresh);
-    if (a !== null) for (const cl of await self.clients.matchAll()) cl.postMessage({ type: 'updated' });
+    if (a === null) return;
+    for (const cl of await self.clients.matchAll()) cl.postMessage({ type: 'updated' });
+    // das Fenster, das gerade geöffnet wird, ist evtl. noch nicht in der Liste
+    if (clientId) await tellWhenReady(clientId);
   } catch {
     /* offline: alter Stand bleibt */
   }
@@ -61,7 +73,7 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(
       caches.open(APP).then(async (c) => {
         const hit = await c.match('./');
-        const upd = refreshPage();
+        const upd = refreshPage(e.resultingClientId);
         e.waitUntil(upd);
         if (hit) return hit;
         await upd;
