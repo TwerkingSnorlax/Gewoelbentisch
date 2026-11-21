@@ -127,7 +127,7 @@ test('Ebenen: gesperrte Ebene lässt sich nicht bearbeiten, ausgeblendete fehlt 
 test('Zufallsgenerator: alle Stile, gleicher Startwert ergibt dieselbe Karte', async ({ page }) => {
   const errors = await open(page);
   const results: Record<string, any> = {};
-  for (const style of ['dungeon', 'temple', 'tavern', 'cave']) {
+  for (const style of ['dungeon', 'temple', 'tavern', 'cave', 'outdoor']) {
     await page.click('#btnGenerate');
     await page.selectOption('#genStyle', style);
     await page.fill('#genSeed', '1234');
@@ -136,10 +136,22 @@ test('Zufallsgenerator: alle Stile, gleicher Startwert ergibt dieselbe Karte', a
     await page.keyboard.press('Escape');
   }
   for (const [style, m] of Object.entries(results)) {
-    expect(m.floor.filter((v: number) => v > 0).length, style).toBeGreaterThan(100);
+    expect(m.floor.filter((v: number) => v > 0).length, style).toBeGreaterThan(style === 'outdoor' ? 20 : 100);
     expect(m.objects.length, style).toBeGreaterThan(3);
-    if (style !== 'cave') expect(m.doors.length, style).toBeGreaterThan(0);
+    if (style !== 'cave' && style !== 'outdoor') expect(m.doors.length, style).toBeGreaterThan(0);
   }
+  // Wald & Grasland: Wege und Wasser, Bäume, keine Wände im VTT, Bäume blockieren die Sicht
+  const out = results.outdoor;
+  expect(out.floor.includes(4)).toBe(true); // Erdweg
+  expect(out.objects.some((o: any) => ['tree', 'pine', 'bigtree'].includes(o.type))).toBe(true);
+  await page.click('#btnGenerate');
+  await page.selectOption('#genStyle', 'outdoor');
+  await page.click('#genCreate');
+  await stored(page, (m) => m.style === 'outdoor');
+  await page.keyboard.press('Escape');
+  const v = JSON.parse((await download(page, () => page.click('header button.primary'))).text);
+  expect(v.line_of_sight).toEqual([]);
+  expect(v.objects_line_of_sight.length).toBeGreaterThan(3);
   // nochmal Gewölbe mit demselben Startwert
   await page.click('#btnGenerate');
   await page.selectOption('#genStyle', 'dungeon');
@@ -147,9 +159,9 @@ test('Zufallsgenerator: alle Stile, gleicher Startwert ergibt dieselbe Karte', a
   const again = await stored(page, (m) => m.style === 'dungeon');
   expect(again.floor).toEqual(results.dungeon.floor);
   expect(again.objects.map((o: any) => [o.type, o.x, o.y])).toEqual(results.dungeon.objects.map((o: any) => [o.type, o.x, o.y]));
-  // Rückgängig führt zur vorherigen Karte (Höhle)
+  // Rückgängig führt zur vorherigen Karte (Wald & Grasland)
   await page.keyboard.press('Control+z');
-  await stored(page, (m) => m.style === 'cave');
+  await stored(page, (m) => m.style === 'outdoor');
   noErrors(errors);
 });
 

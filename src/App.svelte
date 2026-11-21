@@ -1,6 +1,7 @@
 <script lang="ts">
   import MapCanvas from './lib/MapCanvas.svelte';
   import ObjectIcon from './lib/ObjectIcon.svelte';
+  import MaterialTile from './lib/MaterialTile.svelte';
   import { t, locale, LOCALES } from './lib/i18n';
   import { TOOLS, type Tool } from './lib/tools';
   import {
@@ -27,7 +28,7 @@
     type LayerId,
   } from './lib/map';
   import { OBJECT_CATEGORIES, OBJECT_TYPES, OBJECTS, type ObjectType } from './lib/objects';
-  import { MATERIAL_SWATCH, STYLE_DEFS } from './lib/render';
+  import { STYLE_DEFS } from './lib/render';
   import { generateMap, randomSeed } from './lib/generator';
   import { exportPng, exportVtt, fileBaseName, saveProject, PROJECT_EXT, VTT_LIGHTS, type VttLights } from './lib/export';
   import { isInstalledApp, offlineReady, updateAvailable } from './lib/offline';
@@ -368,6 +369,11 @@
           : $t(`hint.${tool}`),
   );
 
+  /** Name eines Bodens, im Außenbereich passend benannt (Erde → Erdweg …) */
+  function materialName(mat: Material): string {
+    return mapStyle === 'outdoor' ? $t(`material.outdoor.${mat}`) : $t(`material.${mat}`);
+  }
+
   function togglePanel(p: 'settings' | 'layers' | 'generate') {
     panel = panel === p ? null : p;
   }
@@ -530,14 +536,15 @@
                 class="swatch"
                 class:active={material === mat}
                 data-material={mat}
-                style:background={MATERIAL_SWATCH[mat]}
                 onclick={() => {
                   material = mat;
                   eraseMode = false;
                 }}
-                title={$t(`material.${mat}`)}
-                aria-label={$t(`material.${mat}`)}
-              ></button>
+                title={materialName(mat)}
+              >
+                <MaterialTile material={mat} />
+                <span>{materialName(mat)}</span>
+              </button>
             {/each}
           </div>
         {/if}

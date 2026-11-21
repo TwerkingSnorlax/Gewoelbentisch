@@ -55,6 +55,7 @@ export function randomSeed(): number {
 }
 
 export function generateMap(o: GenOptions): MapDoc {
+  if (o.style === 'outdoor') return generateOutdoor(o);
   const r = rng(o.seed);
   const m = createMap(o.width, o.height, o.name, o.style);
   const W = m.width;
@@ -310,5 +311,163 @@ export function generateMap(o: GenOptions): MapDoc {
     }
   }
 
+  return m;
+}
+
+/**
+ * Wald & Grasland: die ganze Karte ist Wiese. Lichtungen werden mit gewundenen Erdwegen verbunden,
+ * dazu ein Teich, Waldstücke (dicht in der Mitte, Büsche am Rand) und Einrichtung je Lichtung.
+ */
+function generateOutdoor(o: GenOptions): MapDoc {
+  const r = rng(o.seed);
+  const m = createMap(o.width, o.height, o.name, 'outdoor');
+  const W = m.width;
+  const H = m.height;
+  const earth = materialId('earth');
+  const water = materialId('water');
+  const keepOpen = new Uint8Array(W * H); // keine Bäume (Wege, Lichtungen, Wasser)
+  const occupied = new Uint8Array(W * H);
+  const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H;
+  const open = (x: number, y: number, rad = 0) => {
+    for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) if (inside(x + dx, y + dy)) keepOpen[(y + dy) * W + x + dx] = 1;
+  };
+
+  /* ---- Lichtungen ---- */
+  const clearings: { x: number; y: number; r: number }[] = [];
+  const count = Math.max(2, Math.min(o.rooms, 12));
+  for (let t = 0; t < 400 && clearings.length < count; t++) {
+    const rad = r.int(2, Math.max(2, Math.min(4, Math.floor(Math.min(W, H) / 6))));
+    const x = r.int(rad + 1, W - rad - 2);
+    const y = r.int(rad + 1, H - rad - 2);
+    if (clearings.some((q) => Math.hypot(q.x - x, q.y - y) < q.r + rad + 4)) continue;
+    clearings.push({ x, y, r: rad });
+  }
+  if (!clearings.length) clearings.push({ x: Math.floor(W / 2), y: Math.floor(H / 2), r: 2 });
+  for (const q of clearings) {
+    for (let y = q.y - q.r; y <= q.y + q.r; y++)
+      for (let x = q.x - q.r; x <= q.x + q.r; x++) if (inside(x, y) && Math.hypot(x - q.x, y - q.y) <= q.r + 0.5) keepOpen[y * W + x] = 1;
+  }
+
+  /* ---- Wege: gewunden von Lichtung zu Lichtung, dazu einer vom Kartenrand ---- */
+  const path = (ax: number, ay: number, bx: number, by: number) => {
+    let x = ax;
+    let y = ay;
+    for (let guard = 0; guard < W * H && (x !== bx || y !== by); guard++) {
+      m.floor[y * W + x] = earth;
+      open(x, y, 1);
+      const towardX = x !== bx && (y === by || r.chance(Math.abs(bx - x) / (Math.abs(bx - x) + Math.abs(by - y))));
+      if (r.chance(0.18)) {
+        // seitlicher Schlenker
+        const nx = towardX ? x : x + r.pick([-1, 1]);
+        const ny = towardX ? y + r.pick([-1, 1]) : y;
+        if (inside(nx, ny)) (x = nx), (y = ny);
+        continue;
+      }
+      if (towardX) x += Math.sign(bx - x);
+      else y += Math.sign(by - y);
+    }
+    m.floor[by * W + bx] = earth;
+  };
+  const connected = [0];
+  const rest = clearings.map((_, i) => i).slice(1);
+  while (rest.length) {
+    let best = [0, 0];
+    let bestD = Infinity;
+    for (const a of connected)
+      for (const b of rest) {
+        const d = Math.hypot(clearings[a].x - clearings[b].x, clearings[a].y - clearings[b].y);
+        if (d < bestD) (bestD = d), (best = [a, b]);
+      }
+    path(clearings[best[0]].x, clearings[best[0]].y, clearings[best[1]].x, clearings[best[1]].y);
+    connected.push(best[1]);
+    rest.splice(rest.indexOf(best[1]), 1);
+  }
+  const first = clearings[0];
+  const edge = r.pick(['l', 'r', 't', 'b'] as const);
+  const ex = edge === 'l' ? 0 : edge === 'r' ? W - 1 : first.x;
+  const ey = edge === 't' ? 0 : edge === 'b' ? H - 1 : first.y;
+  path(ex, ey, first.x, first.y);
+
+  /* ---- Teich ---- */
+  for (let t = 0; t < 60; t++) {
+    const rx = r.int(2, 3);
+    const ry = r.int(1, 3);
+    const cx = r.int(rx + 1, W - rx - 2);
+    const cy = r.int(ry + 1, H - ry - 2);
+    let clash = false;
+    for (let y = cy - ry - 1; y <= cy + ry + 1 && !clash; y++)
+      for (let x = cx - rx - 1; x <= cx + rx + 1; x++) if (inside(x, y) && (keepOpen[y * W + x] || m.floor[y * W + x])) clash = true;
+    if (clash) continue;
+    for (let y = cy - ry; y <= cy + ry; y++)
+      for (let x = cx - rx; x <= cx + rx; x++) {
+        const nx = (x - cx) / (rx + 0.5);
+        const ny = (y - cy) / (ry + 0.5);
+        if (nx * nx + ny * ny <= 1 + (r.next() - 0.5) * 0.3) {
+          m.floor[y * W + x] = water;
+          open(x, y, 1);
+        }
+      }
+    break;
+  }
+
+  /* ---- Objekte ---- */
+  const place = (type: ObjectType, x: number, y: number, rot: Rotation = 0, allowOpen = false): boolean => {
+    const f = footprint({ type, rot });
+    for (let yy = y; yy < y + f.h; yy++)
+      for (let xx = x; xx < x + f.w; xx++) {
+        if (!inside(xx, yy) || occupied[yy * W + xx] || m.floor[yy * W + xx] === water) return false;
+        if (!allowOpen && keepOpen[yy * W + xx]) return false;
+        if (allowOpen && m.floor[yy * W + xx] === earth) return false; // nicht auf den Weg
+      }
+    for (let yy = y; yy < y + f.h; yy++) for (let xx = x; xx < x + f.w; xx++) occupied[yy * W + xx] = 1;
+    m.objects.push({ id: newId(), type, x, y, rot });
+    return true;
+  };
+
+  // Waldstücke als weiche Flecken
+  const blobs = Array.from({ length: Math.max(4, Math.round((W * H) / 65)) }, () => ({
+    x: r.int(0, W - 1),
+    y: r.int(0, H - 1),
+    rad: r.int(3, Math.max(4, Math.floor(Math.min(W, H) / 3))),
+  }));
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let p = 0.03;
+      for (const b of blobs) p = Math.max(p, 1 - Math.hypot(x - b.x, y - b.y) / b.rad);
+      if (r.next() > Math.min(0.95, p * 1.1)) continue;
+      if (p > 0.45) {
+        if (r.chance(0.12) && place('bigtree', x, y)) continue;
+        place(r.chance(0.4) ? 'pine' : 'tree', x, y);
+      } else if (p > 0.2) {
+        place(r.chance(0.5) ? 'bush' : 'tree', x, y);
+      } else if (r.chance(0.3)) {
+        place(r.pick(['bush', 'stump', 'boulder'] as const), x, y);
+      }
+    }
+  }
+
+  // Lichtungen einrichten: Lager mit Feuer und Zelten, Ruine, sonst Kleinkram
+  const spot = (q: { x: number; y: number; r: number }, type: ObjectType, tries = 25) => {
+    for (let t = 0; t < tries; t++) {
+      const rot = r.pick([0, 90, 180, 270] as const);
+      if (place(type, r.int(q.x - q.r, q.x + q.r), r.int(q.y - q.r, q.y + q.r), rot, true)) return true;
+    }
+    return false;
+  };
+  clearings.forEach((q, i) => {
+    if (i === 0) {
+      if (!place('campfire', q.x, q.y, 0, true)) spot(q, 'campfire');
+      for (let k = 0; k < Math.min(3, q.r); k++) spot(q, 'tent');
+      spot(q, 'log');
+    } else if (i === 1 && q.r >= 2) {
+      // Ruine: Steinplatten mit Säulen
+      const stone = materialId('marble');
+      for (let y = q.y - 1; y <= q.y + 1; y++) for (let x = q.x - 1; x <= q.x + 1; x++) if (inside(x, y) && m.floor[y * W + x] !== water) m.floor[y * W + x] = stone;
+      for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) if (r.chance(0.7)) place('pillar', q.x + dx, q.y + dy, 0, true);
+      spot(q, 'statue');
+    } else {
+      for (let k = r.int(1, 3); k > 0; k--) spot(q, r.pick(['stump', 'log', 'boulder', 'bush', 'chest'] as const));
+    }
+  });
   return m;
 }

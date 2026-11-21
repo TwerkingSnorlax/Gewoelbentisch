@@ -12,7 +12,7 @@ export interface RenderOptions {
 
 export interface StyleDef {
   rock: string;
-  texture: 'hatch' | 'bricks' | 'grass' | 'pebbles';
+  texture: 'hatch' | 'bricks' | 'grass' | 'pebbles' | 'meadow';
   textureColor: string;
   wall: string;
   wallWidth: number;
@@ -20,13 +20,16 @@ export interface StyleDef {
   rough: boolean;
   /** Standard-Bodenmaterial für neue Räume */
   material: Material;
+  /** Wände an den Rändern der Bodenflächen (aus = freistehend: alles ist begehbar) */
+  walls: boolean;
 }
 
 export const STYLE_DEFS: Record<StyleId, StyleDef> = {
-  dungeon: { rock: '#2a2420', texture: 'hatch', textureColor: 'rgba(205,185,150,0.22)', wall: '#1a1612', wallWidth: 0.16, rough: false, material: 'stone' },
-  temple: { rock: '#26242b', texture: 'bricks', textureColor: 'rgba(200,190,220,0.16)', wall: '#141318', wallWidth: 0.2, rough: false, material: 'marble' },
-  tavern: { rock: '#3c4a2b', texture: 'grass', textureColor: 'rgba(170,200,110,0.35)', wall: '#3a2414', wallWidth: 0.22, rough: false, material: 'wood' },
-  cave: { rock: '#2b2622', texture: 'pebbles', textureColor: 'rgba(200,180,150,0.25)', wall: '#15110e', wallWidth: 0.2, rough: true, material: 'earth' },
+  dungeon: { rock: '#2a2420', texture: 'hatch', textureColor: 'rgba(205,185,150,0.22)', wall: '#1a1612', wallWidth: 0.16, rough: false, material: 'stone', walls: true },
+  temple: { rock: '#26242b', texture: 'bricks', textureColor: 'rgba(200,190,220,0.16)', wall: '#141318', wallWidth: 0.2, rough: false, material: 'marble', walls: true },
+  tavern: { rock: '#3c4a2b', texture: 'grass', textureColor: 'rgba(170,200,110,0.35)', wall: '#3a2414', wallWidth: 0.22, rough: false, material: 'wood', walls: true },
+  cave: { rock: '#2b2622', texture: 'pebbles', textureColor: 'rgba(200,180,150,0.25)', wall: '#15110e', wallWidth: 0.2, rough: true, material: 'earth', walls: true },
+  outdoor: { rock: '#6a8a45', texture: 'meadow', textureColor: 'rgba(40,70,25,0.45)', wall: '#3b2a1a', wallWidth: 0.06, rough: true, material: 'earth', walls: false },
 };
 
 export const COLORS = {
@@ -35,15 +38,6 @@ export const COLORS = {
   door: '#8a5a2b',
   doorEdge: '#3b2510',
   light: '#f2b84b',
-};
-
-/** Vorschaufarben der Materialien (für die Auswahl in der Oberfläche) */
-export const MATERIAL_SWATCH: Record<Material, string> = {
-  stone: '#d9c8a6',
-  wood: '#b07a45',
-  marble: '#e9e6df',
-  earth: '#a88a64',
-  water: '#4f86b5',
 };
 
 /** Deterministische Pseudo-Zufallszahl 0..1 pro Feld, damit die Karte nicht flackert. */
@@ -110,6 +104,23 @@ function drawRockTexture(ctx: CanvasRenderingContext2D, m: MapDoc, s: StyleDef, 
           ctx.moveTo(gx + c * 0.06, gy);
           ctx.lineTo(gx + c * 0.1, gy - c * 0.12);
         }
+      } else if (s.texture === 'meadow') {
+        // Wiese: fleckige Grüntöne, Grasbüschel überall
+        ctx.stroke();
+        const v = Math.round((rand(x, y, 11) - 0.5) * 18);
+        ctx.fillStyle = `rgb(${106 + v}, ${138 + v}, ${69 + Math.round(v / 2)})`;
+        ctx.fillRect(x * c, y * c, c + 0.5, c + 0.5);
+        ctx.beginPath();
+        for (let i = 0; i < 4; i++) {
+          const gx = (x + 0.1 + rand(x, y, i) * 0.8) * c;
+          const gy = (y + 0.2 + rand(x, y, i + 5) * 0.75) * c;
+          ctx.moveTo(gx - c * 0.05, gy);
+          ctx.lineTo(gx - c * 0.08, gy - c * 0.1);
+          ctx.moveTo(gx, gy);
+          ctx.lineTo(gx, gy - c * 0.12);
+          ctx.moveTo(gx + c * 0.05, gy);
+          ctx.lineTo(gx + c * 0.08, gy - c * 0.1);
+        }
       } else if (s.texture === 'pebbles' && (near || rand(x, y, 3) < 0.25)) {
         for (let i = 0; i < 3; i++) {
           const px = (x + 0.15 + rand(x, y, i) * 0.7) * c;
@@ -124,15 +135,28 @@ function drawRockTexture(ctx: CanvasRenderingContext2D, m: MapDoc, s: StyleDef, 
   ctx.stroke();
 }
 
-function drawFloorCell(ctx: CanvasRenderingContext2D, mat: Material, x: number, y: number, c: number) {
+export function drawFloorCell(ctx: CanvasRenderingContext2D, mat: Material, x: number, y: number, c: number) {
   const px = x * c;
   const py = y * c;
   const v = Math.round((rand(x, y, 9) - 0.5) * 12);
   switch (mat) {
-    case 'stone':
+    case 'stone': {
       ctx.fillStyle = shade([230, 214, 184], v);
       ctx.fillRect(px, py, c + 0.5, c + 0.5);
+      // Steinfugen: zwei Reihen behauener Steine, versetzt
+      ctx.strokeStyle = 'rgba(110, 85, 55, 0.35)';
+      ctx.lineWidth = Math.max(1, c * 0.025);
+      ctx.beginPath();
+      ctx.moveTo(px, py + c / 2);
+      ctx.lineTo(px + c, py + c / 2);
+      for (let r = 0; r < 2; r++) {
+        const sx = px + (0.3 + rand(x, y, 70 + r) * 0.4) * c;
+        ctx.moveTo(sx, py + (r * c) / 2);
+        ctx.lineTo(sx, py + ((r + 1) * c) / 2);
+      }
+      ctx.stroke();
       break;
+    }
     case 'wood': {
       ctx.fillStyle = shade([176, 122, 69], v);
       ctx.fillRect(px, py, c + 0.5, c + 0.5);
@@ -210,6 +234,42 @@ function wallPath(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: num
   }
 }
 
+/** Kanten zwischen verschiedenen Böden (für freistehende Karten): dunkler Saum, am Wasser ein helles Ufer */
+function drawMaterialEdges(ctx: CanvasRenderingContext2D, m: MapDoc, c: number) {
+  const water = 5;
+  const edges: { x1: number; y1: number; x2: number; y2: number; shore: boolean }[] = [];
+  for (let y = 0; y <= m.height; y++) {
+    for (let x = 0; x <= m.width; x++) {
+      const here = floorAt(m, x, y);
+      if (x < m.width && y > 0) {
+        const up = floorAt(m, x, y - 1);
+        if (up !== here) edges.push({ x1: x, y1: y, x2: x + 1, y2: y, shore: up === water || here === water });
+      } else if (x < m.width && y === 0) {
+        // Kartenrand: keine Kante
+      }
+      if (y < m.height && x > 0) {
+        const left = floorAt(m, x - 1, y);
+        if (left !== here) edges.push({ x1: x, y1: y, x2: x, y2: y + 1, shore: left === water || here === water });
+      }
+    }
+  }
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (const [shoreOnly, style, width] of [
+    [false, 'rgba(50, 35, 20, 0.45)', 0.09],
+    [true, 'rgba(225, 240, 245, 0.75)', 0.05],
+  ] as const) {
+    ctx.strokeStyle = style;
+    ctx.lineWidth = c * width;
+    ctx.beginPath();
+    for (const e of edges) {
+      if (shoreOnly && !e.shore) continue;
+      wallPath(ctx, e.x1, e.y1, e.x2, e.y2, c, true);
+    }
+    ctx.stroke();
+  }
+}
+
 export function renderMap(ctx: CanvasRenderingContext2D, m: MapDoc, o: RenderOptions): void {
   const c = o.cell;
   const s = STYLE_DEFS[m.style];
@@ -238,12 +298,15 @@ export function renderMap(ctx: CanvasRenderingContext2D, m: MapDoc, o: RenderOpt
     ctx.beginPath();
     for (let y = 0; y < m.height; y++) {
       for (let x = 0; x < m.width; x++) {
-        if (!isFloor(m, x, y)) continue;
+        if (s.walls && !isFloor(m, x, y)) continue;
         ctx.rect(x * c, y * c, c, c);
       }
     }
     ctx.stroke();
   }
+
+  // Freistehend: weiche Ränder zwischen Wiese, Wegen und Wasser statt Wänden
+  if (!s.walls && L.floor.visible) drawMaterialEdges(ctx, m, c);
 
   // Objekte
   if (L.objects.visible) {
@@ -251,7 +314,7 @@ export function renderMap(ctx: CanvasRenderingContext2D, m: MapDoc, o: RenderOpt
   }
 
   // Wände (Schatten, dann Linie)
-  if (L.floor.visible) {
+  if (L.floor.visible && s.walls) {
     const segs = wallSegments(m);
     ctx.lineCap = 'square';
     ctx.lineJoin = 'round';

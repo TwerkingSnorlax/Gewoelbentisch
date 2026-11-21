@@ -39,7 +39,7 @@ export type Material = (typeof MATERIALS)[number];
 export const materialId = (m: Material): number => MATERIALS.indexOf(m) + 1;
 export const materialOf = (id: number): Material | null => MATERIALS[id - 1] ?? null;
 
-export const STYLES = ['dungeon', 'temple', 'tavern', 'cave'] as const;
+export const STYLES = ['dungeon', 'temple', 'tavern', 'cave', 'outdoor'] as const;
 export type StyleId = (typeof STYLES)[number];
 
 export const LAYERS = ['floor', 'objects', 'doors', 'lights', 'grid'] as const;

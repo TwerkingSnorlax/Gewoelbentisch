@@ -23,9 +23,16 @@ export type ObjectType =
   | 'campfire'
   | 'brazier'
   | 'boulder'
-  | 'bones';
+  | 'bones'
+  | 'tree'
+  | 'pine'
+  | 'bigtree'
+  | 'bush'
+  | 'stump'
+  | 'log'
+  | 'tent';
 
-export type ObjectCategory = 'vault' | 'furniture' | 'storage' | 'fire';
+export type ObjectCategory = 'vault' | 'furniture' | 'storage' | 'fire' | 'nature';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -440,7 +447,7 @@ export const OBJECTS: Record<ObjectType, ObjectDef> = {
     },
   },
   boulder: {
-    w: 1, h: 1, category: 'fire', z: 1, blocksSight: true,
+    w: 1, h: 1, category: 'nature', z: 1, blocksSight: true,
     draw(ctx, w, h, c) {
       const pts = [
         [0.2, 0.35], [0.38, 0.14], [0.66, 0.16], [0.86, 0.38], [0.82, 0.7], [0.58, 0.88], [0.28, 0.82], [0.12, 0.6],
@@ -466,7 +473,7 @@ export const OBJECTS: Record<ObjectType, ObjectDef> = {
     },
   },
   bones: {
-    w: 1, h: 1, category: 'fire', z: 1,
+    w: 1, h: 1, category: 'nature', z: 1,
     draw(ctx, w, h, c) {
       const bone = (x1: number, y1: number, x2: number, y2: number) => {
         ctx.strokeStyle = INK;
@@ -499,10 +506,169 @@ export const OBJECTS: Record<ObjectType, ObjectDef> = {
       ctx.fill();
     },
   },
+
+  /* ---- Natur ---- */
+  tree: {
+    w: 1, h: 1, category: 'nature', z: 2, blocksSight: true,
+    draw(ctx, w, h, c) {
+      canopy(ctx, w / 2, h / 2, c * 0.58, c, '#3f6b35', 'rgba(140,190,90,0.35)');
+    },
+  },
+  bigtree: {
+    w: 2, h: 2, category: 'nature', z: 2, blocksSight: true,
+    draw(ctx, w, h, c) {
+      canopy(ctx, w / 2, h / 2, c * 1.1, c, '#365f2e', 'rgba(140,190,90,0.3)', 9);
+    },
+  },
+  pine: {
+    w: 1, h: 1, category: 'nature', z: 2, blocksSight: true,
+    draw(ctx, w, h, c) {
+      // Nadelbaum: Stern aus Zacken, von oben gesehen
+      const star = (r: number) => {
+        ctx.beginPath();
+        const n = 9;
+        for (let i = 0; i <= n * 2; i++) {
+          const a = (i / (n * 2)) * Math.PI * 2;
+          const rr = i % 2 ? r * 0.62 : r;
+          const x = w / 2 + Math.cos(a) * rr;
+          const y = h / 2 + Math.sin(a) * rr;
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        }
+        ctx.closePath();
+      };
+      ctx.save();
+      ctx.translate(c * 0.12, c * 0.14);
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      star(c * 0.56);
+      ctx.fill();
+      ctx.restore();
+      star(c * 0.56);
+      ctx.fillStyle = '#2c5236';
+      ctx.fill();
+      lw(ctx, c, 0.03);
+      ctx.strokeStyle = 'rgba(15,30,15,0.9)';
+      ctx.stroke();
+      star(c * 0.32);
+      ctx.fillStyle = '#3d6e47';
+      ctx.fill();
+    },
+  },
+  bush: {
+    w: 1, h: 1, category: 'nature', z: 1,
+    draw(ctx, w, h, c) {
+      canopy(ctx, w / 2, h / 2, c * 0.36, c, '#557f3b', 'rgba(170,210,110,0.35)', 6);
+    },
+  },
+  stump: {
+    w: 1, h: 1, category: 'nature', z: 1,
+    draw(ctx, w, h, c) {
+      shadow(ctx, c, () => circle(ctx, w / 2, h / 2, c * 0.26));
+      circle(ctx, w / 2, h / 2, c * 0.26);
+      ctx.fillStyle = '#6e4a2a';
+      ctx.fill();
+      lw(ctx, c);
+      ctx.stroke();
+      circle(ctx, w / 2, h / 2, c * 0.19);
+      ctx.fillStyle = '#c9a26b';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(90,60,30,0.6)';
+      ctx.lineWidth = Math.max(1, c * 0.015);
+      for (const r of [0.06, 0.12]) {
+        circle(ctx, w / 2, h / 2, c * r);
+        ctx.stroke();
+      }
+    },
+  },
+  log: {
+    w: 2, h: 1, category: 'nature', z: 1,
+    draw(ctx, w, h, c) {
+      box(ctx, c, c * 0.15, c * 0.3, w - c * 0.3, h - c * 0.6, '#7a5230', c * 0.2);
+      ctx.strokeStyle = 'rgba(50,30,15,0.5)';
+      ctx.lineWidth = Math.max(1, c * 0.02);
+      ctx.beginPath();
+      ctx.moveTo(c * 0.35, h * 0.42);
+      ctx.lineTo(w - c * 0.5, h * 0.42);
+      ctx.moveTo(c * 0.5, h * 0.58);
+      ctx.lineTo(w - c * 0.35, h * 0.58);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(w - c * 0.2, h / 2, c * 0.08, c * 0.2, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#c9a26b';
+      ctx.fill();
+      lw(ctx, c, 0.025);
+      ctx.stroke();
+    },
+  },
+  tent: {
+    w: 2, h: 2, category: 'nature', z: 1,
+    draw(ctx, w, h, c) {
+      const x0 = c * 0.15;
+      const y0 = c * 0.25;
+      const x1 = w - c * 0.15;
+      const y1 = h - c * 0.25;
+      shadow(ctx, c, () => rrect(ctx, x0, y0, x1 - x0, y1 - y0, c * 0.05));
+      // zwei Dachhälften
+      ctx.fillStyle = '#d8c497';
+      ctx.fillRect(x0, y0, x1 - x0, h / 2 - y0);
+      ctx.fillStyle = '#b9a372';
+      ctx.fillRect(x0, h / 2, x1 - x0, y1 - h / 2);
+      lw(ctx, c);
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.beginPath();
+      ctx.moveTo(x0, h / 2);
+      ctx.lineTo(x1, h / 2);
+      ctx.stroke();
+      // Eingang
+      ctx.fillStyle = '#4a3a22';
+      ctx.beginPath();
+      ctx.moveTo(x1, h / 2 - c * 0.25);
+      ctx.lineTo(x1 - c * 0.35, h / 2);
+      ctx.lineTo(x1, h / 2 + c * 0.25);
+      ctx.closePath();
+      ctx.fill();
+    },
+  },
 };
 
 export const OBJECT_TYPES = Object.keys(OBJECTS) as ObjectType[];
-export const OBJECT_CATEGORIES: ObjectCategory[] = ['vault', 'furniture', 'storage', 'fire'];
+export const OBJECT_CATEGORIES: ObjectCategory[] = ['vault', 'furniture', 'storage', 'fire', 'nature'];
+
+/** Laubkrone aus mehreren Kreisen (feste Form je Größe), etwas über die Fläche hinaus */
+function canopy(ctx: Ctx, cx: number, cy: number, r: number, c: number, base: string, light: string, lumps = 7) {
+  const parts: [number, number, number][] = [];
+  for (let i = 0; i < lumps; i++) {
+    const a = (i / lumps) * Math.PI * 2 + 0.4;
+    parts.push([cx + Math.cos(a) * r * 0.55, cy + Math.sin(a) * r * 0.55, r * (0.5 + ((i * 37) % 7) * 0.025)]);
+  }
+  parts.push([cx, cy, r * 0.6]);
+  const path = () => {
+    ctx.beginPath();
+    for (const [x, y, rr] of parts) {
+      ctx.moveTo(x + rr, y);
+      ctx.arc(x, y, rr, 0, Math.PI * 2);
+    }
+  };
+  // Schatten auf dem Boden
+  ctx.save();
+  ctx.translate(c * 0.12, c * 0.14);
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  path();
+  ctx.fill();
+  ctx.restore();
+  path();
+  ctx.fillStyle = base;
+  ctx.fill();
+  lw(ctx, c, 0.03);
+  ctx.strokeStyle = 'rgba(20,35,15,0.85)';
+  ctx.stroke();
+  // Licht oben links
+  ctx.fillStyle = light;
+  for (const [x, y, rr] of parts.slice(0, Math.ceil(lumps / 2))) {
+    ctx.beginPath();
+    ctx.arc(x - rr * 0.25, y - rr * 0.25, rr * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
 
 /** Zeichnet ein Objekt an seiner Position (in Pixeln) mit Drehung */
 export function drawObject(ctx: Ctx, type: ObjectType, x: number, y: number, rot: number, c: number) {

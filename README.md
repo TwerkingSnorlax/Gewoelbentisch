@@ -17,10 +17,13 @@ z. B. für Encounter+ oder Foundry VTT.
 | Licht | `7` | Lichtquelle auf ein Feld setzen oder entfernen |
 | Objekt | `8` | Objekt aus der Palette wählen und antippen. `R` dreht |
 
-- **Bodenmaterialien:** Stein, Holz, Marmor, Erde, Wasser (Auswahl unten in der Statusleiste bei Raum und Pinsel).
-- **Stile** (Karte → Stil): Gewölbe, Tempel, Taverne, Höhle. Bestimmen Fels, Wände und Standard-Boden.
-- **Objekte:** 21 selbst gezeichnete Objekte in vier Gruppen (Gewölbe & Tempel, Einrichtung, Lager, Feuer & Natur).
-  Säulen, Statuen und Felsbrocken blockieren im VTT die Sicht; Kamin, Lagerfeuer und Feuerschale leuchten.
+- **Bodenmaterialien:** Stein, Holz, Marmor, Erde, Wasser – unten in der Statusleiste bei Raum und Pinsel als kleine
+  Vorschau mit echter Textur und Namen (im Außenbereich: Pflaster, Holzsteg, Steinplatten, Erdweg, Wasser).
+- **Stile** (Karte → Stil): Gewölbe, Tempel, Taverne, Höhle, Wald & Grasland. Bestimmen Fels, Wände und Standard-Boden.
+  **Wald & Grasland** ist freistehend: Die ganze Karte ist begehbare Wiese ohne automatische Wände; gemalt werden
+  Wege, Wasser oder Pflaster (mit weichen Rändern), Bäume blockieren im VTT die Sicht.
+- **Objekte:** 28 selbst gezeichnete Objekte in fünf Gruppen (Gewölbe & Tempel, Einrichtung, Lager, Feuer, Natur mit
+  Laub-, Nadel- und großem Baum, Busch, Baumstumpf, Baumstamm, Zelt). Säulen, Statuen, Felsbrocken und Bäume blockieren im VTT die Sicht; Kamin, Lagerfeuer und Feuerschale leuchten.
 - **Ebenen:** Boden & Wände, Objekte, Türen, Lichter, Raster – jeweils ein- und ausblendbar und sperrbar.
   Ausgeblendete Ebenen fehlen auch im Export.
 - **Zufallsgenerator:** erzeugt eine komplette Karte im gewählten Stil mit Räumen, Gängen, Türen, Licht und Einrichtung.
