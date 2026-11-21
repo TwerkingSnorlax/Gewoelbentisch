@@ -113,7 +113,7 @@ const de = {
   'settings.trim': 'Auf Inhalt zuschneiden',
   'settings.vttLights': 'Lichter im VTT-Export',
   'settings.vttLights.neutral': 'Neutral (weiß, färbt nicht)',
-  'settings.vttLights.warm': 'Warm (Kerzenlicht)',
+  'settings.vttLights.warm': 'Warm (Kerzenlicht, nicht in Encounter+)',
   'settings.vttLights.none': 'Nicht exportieren',
   'settings.language': 'Sprache',
   'settings.close': 'Schließen',
