@@ -3,6 +3,12 @@ import { allLights, footprint, serialize, wallSegments, type MapDoc } from './ma
 import { OBJECTS } from './objects';
 import { renderMap } from './render';
 
+/**
+ * Lichtfarbe im Format AARRGGBB (warmes Kerzenlicht). Die ersten beiden Stellen sind die Deckkraft
+ * der Farbe: 00 = 0 %, sonst färbt z. B. Encounter+ die ganze Lichtfläche voll ein.
+ */
+export const LIGHT_COLOR = '00ffd9a0';
+
 /** Übliche Auflösung für VTT-Karten (Pixel pro Feld). */
 export const EXPORT_PPG = 70;
 /** Viele Browser (v. a. Safari auf dem iPad) begrenzen die Canvas-Größe. */
@@ -107,7 +113,7 @@ export function buildUniversalVtt(m: MapDoc) {
       position: { x: l.x, y: l.y },
       range: l.range,
       intensity: 1,
-      color: 'ffffd9a0',
+      color: LIGHT_COLOR,
       shadows: true,
     })),
     image,

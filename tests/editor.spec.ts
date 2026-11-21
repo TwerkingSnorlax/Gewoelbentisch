@@ -94,7 +94,7 @@ test('Objekte platzieren, verschieben, drehen, duplizieren, löschen; Sichtblock
   const v = JSON.parse((await download(page, () => page.click('header button.primary'))).text);
   expect(v.objects_line_of_sight).toHaveLength(1); // nur die Säule blockiert die Sicht
   expect(v.objects_line_of_sight[0][0]).toEqual({ x: 4.15, y: 6.15 });
-  expect(v.lights).toEqual([expect.objectContaining({ position: { x: 10.5, y: 8.5 }, range: 4 })]); // Feuerschale leuchtet
+  expect(v.lights).toEqual([expect.objectContaining({ position: { x: 10.5, y: 8.5 }, range: 4, color: '00ffd9a0' })]); // Feuerschale leuchtet, Farbdeckkraft 0 %
   noErrors(errors);
 });
 
