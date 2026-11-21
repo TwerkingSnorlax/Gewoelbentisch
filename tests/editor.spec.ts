@@ -94,7 +94,7 @@ test('Objekte platzieren, verschieben, drehen, duplizieren, löschen; Sichtblock
   const v = JSON.parse((await download(page, () => page.click('header button.primary'))).text);
   expect(v.objects_line_of_sight).toHaveLength(1); // nur die Säule blockiert die Sicht
   expect(v.objects_line_of_sight[0][0]).toEqual({ x: 4.15, y: 6.15 });
-  expect(v.lights).toEqual([expect.objectContaining({ position: { x: 10.5, y: 8.5 }, range: 4, color: '00ffd9a0' })]); // Feuerschale leuchtet, Farbdeckkraft 0 %
+  expect(v.lights).toEqual([expect.objectContaining({ position: { x: 10.5, y: 8.5 }, range: 4, color: 'ffffffff' })]); // Feuerschale leuchtet, neutral weiß
   noErrors(errors);
 });
 
@@ -230,5 +230,26 @@ test('Karte wächst automatisch beim Zeichnen über den Rand, Ansicht bleibt ste
   await page.keyboard.press('Escape');
   await page.keyboard.press('Control+z');
   await stored(page, (m) => m.width === w0 && m.height === h0);
+  noErrors(errors);
+});
+
+test('Lichter im VTT-Export: neutral, warm oder gar nicht', async ({ page }) => {
+  const errors = await open(page);
+  const c = (x: number, y: number) => cellPos(page, x, y, SIZE);
+  await drag(page, await c(3, 3), await c(8, 8));
+  await tool(page, '7');
+  await page.mouse.click((await c(5, 5)).x, (await c(5, 5)).y);
+  await stored(page, (m) => m.lights.length === 1);
+  const vtt = async () => JSON.parse((await download(page, () => page.click('header button.primary'))).text);
+  expect((await vtt()).lights.map((l: any) => l.color)).toEqual(['ffffffff']);
+  await page.click('#btnSettings');
+  await page.selectOption('#vttLights', 'warm');
+  expect((await vtt()).lights.map((l: any) => l.color)).toEqual(['ffffd9a0']);
+  await page.selectOption('#vttLights', 'none');
+  expect((await vtt()).lights).toEqual([]);
+  // Einstellung bleibt nach dem Neuladen erhalten
+  await page.reload();
+  await page.click('#btnSettings');
+  await expect(page.locator('#vttLights')).toHaveValue('none');
   noErrors(errors);
 });

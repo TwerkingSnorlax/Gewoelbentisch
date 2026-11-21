@@ -29,7 +29,7 @@
   import { OBJECT_CATEGORIES, OBJECT_TYPES, OBJECTS, type ObjectType } from './lib/objects';
   import { MATERIAL_SWATCH, STYLE_DEFS } from './lib/render';
   import { generateMap, randomSeed } from './lib/generator';
-  import { exportPng, exportVtt, fileBaseName, saveProject, PROJECT_EXT } from './lib/export';
+  import { exportPng, exportVtt, fileBaseName, saveProject, PROJECT_EXT, VTT_LIGHTS, type VttLights } from './lib/export';
   import { isInstalledApp, offlineReady, updateAvailable } from './lib/offline';
 
   const AUTOSAVE_KEY = 'gewoelbentisch.autosave';
@@ -74,6 +74,27 @@
       }
     })(),
   );
+  // Lichter im VTT-Export (Einstellung je Gerät)
+  const VTTLIGHTS_KEY = 'gewoelbentisch.vttLights';
+  let vttLights = $state<VttLights>(
+    (() => {
+      try {
+        const v = localStorage.getItem(VTTLIGHTS_KEY) as VttLights | null;
+        return v && VTT_LIGHTS.includes(v) ? v : 'neutral';
+      } catch {
+        return 'neutral';
+      }
+    })(),
+  );
+  function setVttLights(v: VttLights) {
+    vttLights = v;
+    try {
+      localStorage.setItem(VTTLIGHTS_KEY, v);
+    } catch {
+      /* ignorieren */
+    }
+  }
+
   function setAutoGrow(v: boolean) {
     autoGrow = v;
     try {
@@ -274,7 +295,7 @@
   async function doExport(kind: 'png' | 'vtt') {
     try {
       if (kind === 'png') await exportPng(map, baseName());
-      else exportVtt(map, baseName());
+      else exportVtt(map, baseName(), vttLights);
     } catch (err) {
       console.error(err);
       alert($t('error.export'));
@@ -555,6 +576,14 @@
           </label>
           <p class="note">{$t('settings.autoGrow.note')}</p>
           <button id="trimMap" class="block" onclick={trim}>{$t('settings.trim')}</button>
+          <label>
+            {$t('settings.vttLights')}
+            <select id="vttLights" value={vttLights} onchange={(e) => setVttLights(e.currentTarget.value as VttLights)}>
+              {#each VTT_LIGHTS as v (v)}
+                <option value={v}>{$t(`settings.vttLights.${v}`)}</option>
+              {/each}
+            </select>
+          </label>
           <label>
             {$t('style.label')}
             <select id="styleSelect" value={mapStyle} onchange={(e) => setStyle(e.currentTarget.value as StyleId)}>

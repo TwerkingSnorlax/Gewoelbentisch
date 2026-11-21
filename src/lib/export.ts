@@ -4,10 +4,15 @@ import { OBJECTS } from './objects';
 import { renderMap } from './render';
 
 /**
- * Lichtfarbe im Format AARRGGBB (warmes Kerzenlicht). Die ersten beiden Stellen sind die Deckkraft
- * der Farbe: 00 = 0 %, sonst färbt z. B. Encounter+ die ganze Lichtfläche voll ein.
+ * Lichter im VTT-Export. Farben im Format AARRGGBB. Encounter+ übernimmt die Deckkraft-Stelle (AA)
+ * nicht (Test: immer 100 %), darum ist neutrales Weiß die Vorgabe – es färbt nichts ein.
  */
-export const LIGHT_COLOR = '00ffd9a0';
+export type VttLights = 'neutral' | 'warm' | 'none';
+export const VTT_LIGHTS: VttLights[] = ['neutral', 'warm', 'none'];
+export const LIGHT_COLORS: Record<Exclude<VttLights, 'none'>, string> = {
+  neutral: 'ffffffff',
+  warm: 'ffffd9a0',
+};
 
 /** Übliche Auflösung für VTT-Karten (Pixel pro Feld). */
 export const EXPORT_PPG = 70;
@@ -56,10 +61,11 @@ export async function exportPng(m: MapDoc, base: string): Promise<void> {
  * Baut eine Universal-VTT-Datei (Format 0.3, wie Dungeondraft .dd2vtt).
  * Alle Koordinaten sind in Feld-Einheiten.
  */
-export function buildUniversalVtt(m: MapDoc) {
+export function buildUniversalVtt(m: MapDoc, lightMode: VttLights = 'neutral') {
   const { canvas, ppg } = renderToCanvas(m);
   const doors = m.layers.doors.visible ? m.doors : [];
-  const lights = m.layers.lights.visible ? allLights(m) : [];
+  const lights = m.layers.lights.visible && lightMode !== 'none' ? allLights(m) : [];
+  const lightColor = LIGHT_COLORS[lightMode === 'warm' ? 'warm' : 'neutral'];
   // Sichtblockierende Objekte (Säulen, Statuen, Felsen) als geschlossene Umrisse
   const blockers = m.layers.objects.visible ? m.objects.filter((o) => OBJECTS[o.type].blocksSight) : [];
   const image = canvas.toDataURL('image/png').split(',')[1];
@@ -113,15 +119,15 @@ export function buildUniversalVtt(m: MapDoc) {
       position: { x: l.x, y: l.y },
       range: l.range,
       intensity: 1,
-      color: LIGHT_COLOR,
+      color: lightColor,
       shadows: true,
     })),
     image,
   };
 }
 
-export function exportVtt(m: MapDoc, base: string): void {
-  const data = buildUniversalVtt(m);
+export function exportVtt(m: MapDoc, base: string, lightMode: VttLights = 'neutral'): void {
+  const data = buildUniversalVtt(m, lightMode);
   download(new Blob([JSON.stringify(data)], { type: 'application/json' }), `${base}.dd2vtt`);
 }
 

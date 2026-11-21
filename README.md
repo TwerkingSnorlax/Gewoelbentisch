@@ -50,6 +50,8 @@ Die App wird als eine einzige HTML-Datei gebaut. Ein Service Worker (`public/sw.
 - **PNG:** 70 Pixel pro Feld (bei sehr großen Karten automatisch weniger, damit es auch auf dem iPad klappt).
 - **VTT (`.dd2vtt`):** Universal VTT 0.3 mit Kartenbild, Raster, Wänden (Sichtlinien), Türen (Portale),
   sichtblockierenden Objekten und Lichtern (inkl. Feuerstellen).
+  Lichtfarbe unter *Karte → Lichter im VTT-Export*: Neutral (weiß, Vorgabe), Warm oder Nicht exportieren.
+  Encounter+ übernimmt die Deckkraft der Lichtfarbe nicht (immer 100 %), deshalb ist Weiß die Vorgabe.
 
 ## Entwicklung
 
