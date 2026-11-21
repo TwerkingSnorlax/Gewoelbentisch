@@ -4,8 +4,8 @@ import { OBJECTS } from './objects';
 import { renderMap } from './render';
 
 /**
- * Lichter im VTT-Export. Farben im Format AARRGGBB. Encounter+ übernimmt beim Import weder Farbe noch
- * Deckkraft (Test: immer Weiß, 100 %); neutrales Weiß ist darum die Vorgabe. „Warm“ wirkt z. B. in Foundry.
+ * Lichter im VTT-Export. Farben im Format AARRGGBB. Neutrales Weiß färbt nichts ein und ist die Vorgabe.
+ * Encounter+ übernimmt die Farbe nur, wenn beim Import „Colored Lights“ eingeschaltet ist (sonst immer Weiß).
  */
 export type VttLights = 'neutral' | 'warm' | 'none';
 export const VTT_LIGHTS: VttLights[] = ['neutral', 'warm', 'none'];

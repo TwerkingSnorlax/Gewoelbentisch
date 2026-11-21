@@ -584,6 +584,7 @@
               {/each}
             </select>
           </label>
+          <p class="note">{$t('settings.vttLights.note')}</p>
           <label>
             {$t('style.label')}
             <select id="styleSelect" value={mapStyle} onchange={(e) => setStyle(e.currentTarget.value as StyleId)}>
