@@ -1,6 +1,6 @@
 // Zeichnet eine Karte auf einen Canvas. Wird vom Editor und vom Export genutzt,
 // damit die exportierte Karte genauso aussieht wie im Editor.
-import { allLights, floorAt, isFloor, materialOf, sortedObjects, wallSegments, type Material, type MapDoc, type StyleId } from './map';
+import { allLights, circleCells, circleOwner, floorAt, isFloor, materialOf, sortedObjects, wallSegments, type MapDoc, type Material, type StyleId } from './map';
 import { drawObject, FOLIAGE, leafCluster } from './objects';
 
 export interface RenderOptions {
@@ -352,6 +352,65 @@ function drawCanopy(ctx: CanvasRenderingContext2D, m: MapDoc, c: number) {
   for (const it of items) leafCluster(ctx, it.x, it.y, it.r, c, it.seed, 'leaves');
 }
 
+/**
+ * Runde Räume: Die Felder eines Kreises liegen als Quadrate im Raster. Hier werden die Ecken außerhalb des
+ * Kreises zu Fels und die Ränder des Kreises, die über die Felder hinausreichen, zu Boden – es entsteht ein
+ * echter Kreis (gleiche Fläche wie XOR aus Feldern und Kreisscheibe).
+ */
+function drawCircleRooms(ctx: CanvasRenderingContext2D, m: MapDoc, s: StyleDef, c: number) {
+  for (const q of m.circles) {
+    const cells = circleCells(q);
+    const mat = materialOf(floorAt(m, Math.floor(q.cx), Math.floor(q.cy))) ?? s.material;
+    const x0 = Math.floor(q.cx - q.r) - 1;
+    const y0 = Math.floor(q.cy - q.r) - 1;
+    const x1 = Math.ceil(q.cx + q.r) + 1;
+    const y1 = Math.ceil(q.cy + q.r) + 1;
+    // Ecken der Felder außerhalb des Kreises: Fels (etwas größer, damit auch Rasterlinien verschwinden)
+    const e = Math.max(1, c * 0.04);
+    ctx.save();
+    ctx.beginPath();
+    for (const [x, y] of cells) ctx.rect(x * c - e, y * c - e, c + 2 * e, c + 2 * e);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.rect(x0 * c, y0 * c, (x1 - x0) * c, (y1 - y0) * c);
+    ctx.moveTo((q.cx + q.r) * c, q.cy * c);
+    ctx.arc(q.cx * c, q.cy * c, q.r * c, 0, Math.PI * 2);
+    ctx.clip('evenodd');
+    ctx.fillStyle = s.rock;
+    ctx.fillRect(x0 * c, y0 * c, (x1 - x0) * c, (y1 - y0) * c);
+    ctx.restore();
+    // Kreisrand, der über die Felder hinausreicht: Boden
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x0 * c, y0 * c, (x1 - x0) * c, (y1 - y0) * c);
+    for (const [x, y] of cells) ctx.rect(x * c, y * c, c, c);
+    ctx.clip('evenodd');
+    ctx.beginPath();
+    ctx.arc(q.cx * c, q.cy * c, q.r * c, 0, Math.PI * 2);
+    ctx.clip();
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) drawFloorCell(ctx, mat, x, y, c);
+    ctx.restore();
+  }
+}
+
+/** Kreisbögen der runden Räume als Wand; Durchgänge (anschließender Boden) bleiben offen */
+function circleArcs(ctx: CanvasRenderingContext2D, m: MapDoc, c: number) {
+  const own = circleOwner(m);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(-2 * c, -2 * c, (m.width + 4) * c, (m.height + 4) * c);
+  for (let y = 0; y < m.height; y++)
+    for (let x = 0; x < m.width; x++) if (isFloor(m, x, y) && own[y * m.width + x] < 0) ctx.rect(x * c, y * c, c, c);
+  ctx.clip('evenodd');
+  ctx.beginPath();
+  for (const q of m.circles) {
+    ctx.moveTo((q.cx + q.r) * c, q.cy * c);
+    ctx.arc(q.cx * c, q.cy * c, q.r * c, 0, Math.PI * 2);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 /** Nummerierte Raummarken (Kreis mit Zahl) */
 export function drawNotes(ctx: CanvasRenderingContext2D, m: MapDoc, c: number) {
   const r = c * 0.32;
@@ -410,6 +469,9 @@ export function renderMap(ctx: CanvasRenderingContext2D, m: MapDoc, o: RenderOpt
     ctx.stroke();
   }
 
+  // runde Räume als echte Kreise
+  if (L.floor.visible && m.circles.length) drawCircleRooms(ctx, m, s, c);
+
   // Freistehend: weiche Ränder zwischen Wiese, Wegen und Wasser statt Wänden
   if (!s.walls && L.floor.visible) drawMaterialEdges(ctx, m, c);
   // Wald: Kanten zwischen Böden innerhalb der Lichtungen weich, Ränder als Blätterdach
@@ -440,6 +502,12 @@ export function renderMap(ctx: CanvasRenderingContext2D, m: MapDoc, o: RenderOpt
       for (const seg of segs) wallPath(ctx, seg.x1, seg.y1, seg.x2, seg.y2, c, s.rough);
       ctx.restore();
       ctx.stroke();
+      if (m.circles.length) {
+        ctx.save();
+        ctx.translate(off * c, off * c);
+        circleArcs(ctx, m, c);
+        ctx.restore();
+      }
     }
   }
 

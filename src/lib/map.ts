@@ -61,6 +61,18 @@ export interface Note {
   text: string;
 }
 
+/**
+ * Runder Raum: Kreis in Feld-Koordinaten. Die Felder, deren Mitte im Kreis liegt, sind Boden;
+ * gezeichnet wird aber der echte Kreis (Wand als Bogen). Wird ein Feld darin entfernt, verschwindet
+ * der Kreis und der Raum bleibt als normale Felder bestehen.
+ */
+export interface Circle {
+  id: string;
+  cx: number;
+  cy: number;
+  r: number;
+}
+
 export interface MapDoc {
   version: 2;
   name: string;
@@ -72,6 +84,7 @@ export interface MapDoc {
   doors: Edge[];
   lights: Light[];
   objects: MapObject[];
+  circles: Circle[];
   notes: Note[];
   /** Hintergrundgeschichte der Karte (vom Generator, frei bearbeitbar) */
   story: string;
@@ -104,6 +117,7 @@ export function createMap(width: number, height: number, name: string, style: St
     doors: [],
     lights: [],
     objects: [],
+    circles: [],
     notes: [],
     story: '',
     layers: defaultLayers(),
@@ -186,6 +200,82 @@ export function cleanupDoors(m: MapDoc): void {
   if (m.doors.some((d) => !isOpenEdge(m, d))) {
     m.doors = m.doors.filter((d) => isOpenEdge(m, d));
   }
+  // runde Räume, in denen ein Feld fehlt, werden zu normalen Feldern
+  if (m.circles.some((c) => circleCells(c).some(([x, y]) => !isFloor(m, x, y)))) {
+    m.circles = m.circles.filter((c) => circleCells(c).every(([x, y]) => isFloor(m, x, y)));
+  }
+}
+
+/* ---------- Runde Räume ---------- */
+
+/** Felder, deren Mitte im Kreis liegt */
+export function circleCells(c: Pick<Circle, 'cx' | 'cy' | 'r'>): [number, number][] {
+  const out: [number, number][] = [];
+  for (let y = Math.floor(c.cy - c.r); y <= Math.ceil(c.cy + c.r); y++)
+    for (let x = Math.floor(c.cx - c.r); x <= Math.ceil(c.cx + c.r); x++)
+      if ((x + 0.5 - c.cx) ** 2 + (y + 0.5 - c.cy) ** 2 <= c.r * c.r + 1e-9) out.push([x, y]);
+  return out;
+}
+
+/** Kreis in das Rechteck (Felder x0..x1, y0..y1) einpassen */
+export function circleInRect(x0: number, y0: number, x1: number, y1: number): Pick<Circle, 'cx' | 'cy' | 'r'> {
+  const ax = Math.min(x0, x1);
+  const ay = Math.min(y0, y1);
+  const w = Math.abs(x1 - x0) + 1;
+  const h = Math.abs(y1 - y0) + 1;
+  return { cx: ax + w / 2, cy: ay + h / 2, r: Math.min(w, h) / 2 };
+}
+
+/**
+ * Runden Raum anlegen (value > 0: Material) oder Felder im Kreis entfernen (value = 0).
+ * Kreise unter 1,5 Feldern Radius bleiben Felder ohne Bogen. Gibt true zurück, wenn sich etwas geändert hat.
+ */
+export function fillCircle(m: MapDoc, c: Pick<Circle, 'cx' | 'cy' | 'r'>, value: number): boolean {
+  let changed = false;
+  for (const [x, y] of circleCells(c)) changed = setFloor(m, x, y, value) || changed;
+  if (value > 0 && c.r >= 1.5 && circleCells(c).every(([x, y]) => inBounds(m, x, y))) {
+    if (!m.circles.some((q) => q.cx === c.cx && q.cy === c.cy && q.r === c.r)) {
+      m.circles = [...m.circles, { id: newId(), cx: c.cx, cy: c.cy, r: c.r }];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** Je Feld der Index des runden Raums, zu dem es gehört (−1 = keiner) */
+export function circleOwner(m: MapDoc): Int16Array {
+  const own = new Int16Array(m.width * m.height).fill(-1);
+  m.circles.forEach((c, i) => {
+    for (const [x, y] of circleCells(c)) if (inBounds(m, x, y)) own[y * m.width + x] = i;
+  });
+  return own;
+}
+
+/**
+ * Bogenstücke der runden Räume (als Polygon), ohne die Stellen, an denen ein Gang oder anderer Boden
+ * anschließt (Durchgänge). Für die Sichtlinien im VTT-Export.
+ */
+export function circleWallSegments(m: MapDoc): Segment[] {
+  const own = circleOwner(m);
+  const segs: Segment[] = [];
+  m.circles.forEach((c, i) => {
+    const n = Math.max(16, Math.round(c.r * 8));
+    for (let k = 0; k < n; k++) {
+      const a1 = (k / n) * Math.PI * 2;
+      const a2 = ((k + 1) / n) * Math.PI * 2;
+      const x1 = c.cx + Math.cos(a1) * c.r;
+      const y1 = c.cy + Math.sin(a1) * c.r;
+      const x2 = c.cx + Math.cos(a2) * c.r;
+      const y2 = c.cy + Math.sin(a2) * c.r;
+      // knapp außerhalb der Bogenmitte: anderer Boden dort = Durchgang
+      const am = (a1 + a2) / 2;
+      const ox = Math.floor(c.cx + Math.cos(am) * (c.r + 0.25));
+      const oy = Math.floor(c.cy + Math.sin(am) * (c.r + 0.25));
+      if (isFloor(m, ox, oy) && own[oy * m.width + ox] !== i) continue;
+      segs.push({ x1, y1, x2, y2 });
+    }
+  });
+  return segs;
 }
 
 /**
@@ -273,7 +363,15 @@ export interface Segment {
 /** Fasst Wandkanten zu möglichst langen geraden Segmenten zusammen (in Feld-Einheiten). */
 export function wallSegments(m: MapDoc): Segment[] {
   const segs: Segment[] = [];
-  const isWall = (e: Edge) => isWallEdge(m, e);
+  const own = m.circles.length ? circleOwner(m) : null;
+  const owned = (x: number, y: number) => !!own && inBounds(m, x, y) && own[y * m.width + x] >= 0;
+  // Kanten am Rand runder Räume ersetzt der Bogen
+  const isWall = (e: Edge) => {
+    if (!isWallEdge(m, e)) return false;
+    if (!own) return true;
+    const [ax, ay, bx, by] = e.dir === 'h' ? [e.x, e.y - 1, e.x, e.y] : [e.x - 1, e.y, e.x, e.y];
+    return !(isFloor(m, ax, ay) ? owned(ax, ay) : owned(bx, by));
+  };
 
   for (let y = 0; y <= m.height; y++) {
     let start = -1;
@@ -317,6 +415,7 @@ export function resizeMap(m: MapDoc, width: number, height: number): MapDoc {
       return o.x + f.w <= next.width && o.y + f.h <= next.height;
     })
     .map((o) => ({ ...o }));
+  next.circles = m.circles.map((c) => ({ ...c }));
   next.notes = m.notes.filter((n) => n.x < next.width && n.y < next.height).map((n) => ({ ...n }));
   next.story = m.story;
   cleanupDoors(next);
@@ -379,6 +478,11 @@ export function deserialize(text: string): MapDoc {
           }))
       : [],
     story: typeof raw.story === 'string' ? raw.story : '',
+    circles: Array.isArray(raw.circles)
+      ? raw.circles
+          .filter((c: any) => c && Number.isFinite(c.cx) && Number.isFinite(c.cy) && Number(c.r) >= 1.5)
+          .map((c: any) => ({ id: typeof c.id === 'string' ? c.id : newId(), cx: c.cx, cy: c.cy, r: Number(c.r) }))
+      : [],
     layers: defaultLayers(),
   };
   if (raw.layers && typeof raw.layers === 'object') {
@@ -422,6 +526,7 @@ export function growInPlace(m: MapDoc, left: number, top: number, right: number,
   for (const l of m.lights) (l.x += left), (l.y += top);
   for (const o of m.objects) (o.x += left), (o.y += top);
   for (const n of m.notes) (n.x += left), (n.y += top);
+  for (const c of m.circles) (c.cx += left), (c.cy += top);
   m.notes = m.notes.filter((n) => n.x >= 0 && n.y >= 0 && n.x < w && n.y < h);
   m.lights = m.lights.filter((l) => inBounds(m, l.x, l.y));
   m.objects = m.objects.filter((o) => {

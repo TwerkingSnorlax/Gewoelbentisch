@@ -51,6 +51,7 @@
   let rev = $state(0);
   let tool = $state<Tool>('room');
   let eraseMode = $state(false);
+  let roomShape = $state<'rect' | 'round'>('rect');
   let material = $state<Material>(STYLE_DEFS[initialMap.style].material);
   let objectType = $state<ObjectType>('pillar');
   let objectRot = $state<Rotation>(0);
@@ -370,7 +371,9 @@
       ? $t('hint.locked')
       : tool === 'room' && eraseMode
         ? $t('hint.room.erase')
-        : tool === 'object'
+        : tool === 'room' && roomShape === 'round'
+          ? $t('hint.room.round')
+          : tool === 'object'
           ? $t('hint.object', { name: $t(`obj.${objectType}`) })
           : $t(`hint.${tool}`),
   );
@@ -529,6 +532,7 @@
           {rev}
           {tool}
           {eraseMode}
+          {roomShape}
           material={materialId(material)}
           {objectType}
           {objectRot}
@@ -591,6 +595,14 @@
           <div class="segmented" role="group">
             <button class:active={!eraseMode} onclick={() => (eraseMode = false)}>{$t('mode.add')}</button>
             <button class:active={eraseMode} onclick={() => (eraseMode = true)}>{$t('mode.remove')}</button>
+          </div>
+          <div class="segmented" role="group" aria-label={$t('shape.label')}>
+            <button id="shapeRect" class:active={roomShape === 'rect'} onclick={() => (roomShape = 'rect')} title={$t('shape.rect')}>
+              <svg viewBox="0 0 24 24"><path d="M5 5h14v14H5z" /></svg>
+            </button>
+            <button id="shapeRound" class:active={roomShape === 'round'} onclick={() => (roomShape = 'round')} title={$t('shape.round')}>
+              <svg viewBox="0 0 24 24"><path d="M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z" /></svg>
+            </button>
           </div>
         {/if}
         {#if tool === 'room' || tool === 'brush'}

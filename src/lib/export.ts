@@ -1,5 +1,5 @@
 // Export als PNG-Bild, Universal-VTT-Datei (.dd2vtt) und Projektdatei.
-import { allLights, footprint, serialize, wallSegments, type MapDoc } from './map';
+import { allLights, circleWallSegments, footprint, serialize, wallSegments, type MapDoc } from './map';
 import { OBJECTS } from './objects';
 import { renderMap, STYLE_DEFS } from './render';
 
@@ -87,7 +87,7 @@ export function buildUniversalVtt(m: MapDoc, lightMode: VttLights = 'neutral') {
       map_size: { x: m.width, y: m.height },
       pixels_per_grid: ppg,
     },
-    line_of_sight: (STYLE_DEFS[m.style].walls ? wallSegments(m) : []).map((s) => [
+    line_of_sight: (STYLE_DEFS[m.style].walls ? [...wallSegments(m), ...circleWallSegments(m)] : []).map((s) => [
       { x: s.x1, y: s.y1 },
       { x: s.x2, y: s.y2 },
     ]),

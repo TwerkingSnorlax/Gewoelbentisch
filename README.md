@@ -10,7 +10,7 @@ z. B. für Encounter+ oder Foundry VTT.
 |---|---|---|
 | Verschieben | `1` | Ansicht ziehen (alternativ: Leertaste halten oder mittlere Maustaste) |
 | Auswahl | `2` | Objekt antippen und ziehen; Leiste über dem Objekt: Drehen, Duplizieren, Löschen (auch `R`, `Strg/⌘ + D`, `Entf`) |
-| Raum | `3` | Rechteck ziehen. Modus *Hinzufügen/Entfernen* unten in der Statusleiste (`X`) |
+| Raum | `3` | Rechteck ziehen. Form *Rechteckig/Rund* und Modus *Hinzufügen/Entfernen* unten in der Statusleiste (`X`) |
 | Pinsel | `4` | Gänge frei malen. Rechte Maustaste radiert |
 | Radierer | `5` | Felder und Objekte entfernen |
 | Tür | `6` | Auf einen Durchgang tippen (Kante zwischen zwei Bodenfeldern) |
@@ -40,6 +40,10 @@ z. B. für Encounter+ oder Foundry VTT.
     Hintergrundgeschichte. Alles steht unter **Räume** und lässt sich bearbeiten. Raummarken erscheinen im Editor und
     im PNG, nicht im VTT-Bild (das sehen die Spieler). Gleicher Startwert ergibt dieselbe Karte.
 - Wände entstehen automatisch an den Rändern der Bodenflächen.
+- **Runde Räume:** Im Modus *Rund* wird ein Kreis ins aufgezogene Rechteck gelegt. Die Felder mit Mittelpunkt im Kreis
+  sind Boden (Raster, Türen, Objekte), gezeichnet wird ein echter Kreis mit Bogenwand; Durchgänge bleiben offen.
+  Im VTT-Export ist die Wand ein Polygon. Wird ein Feld im Kreis entfernt, wird der Raum zu normalen Feldern.
+  Der Generator erzeugt runde Räume im Gewölbe (runde Hallen mit Säulenkranz) und die Apsis im Tempel.
 - **Karte wächst automatisch** (Karte → Schalter, Vorgabe an): Wer über den Rand hinaus malt, einen Raum zieht oder
   Objekte und Lichter setzt, vergrößert die Karte in diese Richtung (auch nach links/oben, bis 200 Felder), mit
   2 Feldern Rand. Die Ansicht bleibt dabei stehen. „Auf Inhalt zuschneiden“ entfernt überflüssigen Rand.

@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
+    circleInRect,
     clampObject,
     cleanupDoors,
+    fillCircle,
     fillRect,
     footprint,
     growToFit,
@@ -29,6 +31,8 @@
     rev: number;
     tool: Tool;
     eraseMode: boolean;
+    /** Form neuer Räume */
+    roomShape?: 'rect' | 'round';
     /** Material-Nummer für Raum und Pinsel */
     material: number;
     objectType: ObjectType;
@@ -55,6 +59,7 @@
     rev,
     tool,
     eraseMode,
+    roomShape = 'rect',
     material,
     objectType,
     objectRot,
@@ -108,7 +113,7 @@
 
   $effect(() => {
     // bei Änderungen an Karte oder Ansicht neu zeichnen
-    void [map, rev, tool, eraseMode, objectType, objectRot, selectedId];
+    void [map, rev, tool, eraseMode, roomShape, objectType, objectRot, selectedId];
     request();
   });
 
@@ -466,7 +471,9 @@
         Math.min(rectStart.y, rectEnd.y) < map.height;
       if (rectInMap) {
         const removed = erasing && removeObjects(x0, y0, x1, y1);
-        if (fillRect(map, x0, y0, x1, y1, erasing ? 0 : material) || removed) {
+        const value = erasing ? 0 : material;
+        const filled = roomShape === 'round' ? fillCircle(map, circleInRect(x0, y0, x1, y1), value) : fillRect(map, x0, y0, x1, y1, value);
+        if (filled || removed) {
           cleanupDoors(map);
           onchange();
         } else if (map.width === lastW && map.height === lastH) {
@@ -559,10 +566,22 @@
       const w = (Math.abs(rectEnd.x - rectStart.x) + 1) * CELL;
       const h = (Math.abs(rectEnd.y - rectStart.y) + 1) * CELL;
       ctx.fillStyle = erasing ? 'rgba(200, 60, 50, 0.25)' : 'rgba(224, 181, 106, 0.3)';
-      ctx.fillRect(x, y, w, h);
       ctx.strokeStyle = erasing ? '#c83c32' : '#e0b56a';
       ctx.lineWidth = 2 * px;
-      ctx.strokeRect(x, y, w, h);
+      if (roomShape === 'round') {
+        const r = Math.min(w, h) / 2;
+        ctx.beginPath();
+        ctx.arc(x + w / 2, y + h / 2, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([4 * px, 4 * px]);
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+      } else {
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x, y, w, h);
+      }
       ctx.fillStyle = '#fff';
       ctx.font = `${14 * px}px system-ui, sans-serif`;
       ctx.fillText(`${w / CELL} × ${h / CELL}`, x + 6 * px, y - 6 * px);

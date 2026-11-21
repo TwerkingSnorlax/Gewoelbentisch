@@ -2,6 +2,7 @@
 // eine Aufgabe (Wachstube, Lager, Gruft, Schankraum …) und eine kurze Beschreibung als nummerierte
 // Raummarke; dazu eine Hintergrundgeschichte. Gleicher Startwert (Seed) ergibt dieselbe Karte.
 import {
+  circleCells,
   cleanupDoors,
   createMap,
   footprint,
@@ -83,6 +84,8 @@ class Builder {
   roomOf: Int16Array;
   occupied: Uint8Array;
   rooms: Room[] = [];
+  /** runde Räume: Raum-Nummer → Kreis */
+  round = new Map<number, { cx: number; cy: number; r: number }>();
 
   constructor(o: GenOptions) {
     this.r = rng(o.seed);
@@ -110,6 +113,28 @@ class Builder {
     return id;
   }
 
+  /** Runden Raum anlegen (Kreis mit Mittelpunkt cx, cy und Radius r in Feldern) */
+  carveCircle(cx: number, cy: number, rad: number, mat: number): number {
+    const id = this.rooms.length;
+    this.rooms.push({ x: Math.floor(cx - rad), y: Math.floor(cy - rad), w: Math.ceil(rad * 2), h: Math.ceil(rad * 2) });
+    for (const [x, y] of circleCells({ cx, cy, r: rad })) this.set(x, y, mat, id);
+    this.m.circles.push({ id: newId(), cx, cy, r: rad });
+    this.round.set(id, { cx, cy, r: rad });
+    return id;
+  }
+
+  /** Säulenkranz in einem runden Raum */
+  ringPillars(room: number, count = 6) {
+    const q = this.rooms[room];
+    const cx = q.x + q.w / 2;
+    const cy = q.y + q.h / 2;
+    const rad = Math.max(1, q.w / 2 - 1.5);
+    for (let k = 0; k < count; k++) {
+      const a = (k / count) * Math.PI * 2 + Math.PI / count;
+      this.place('pillar', Math.floor(cx + Math.cos(a) * rad), Math.floor(cy + Math.sin(a) * rad), 0, room);
+    }
+  }
+
   /** Tür auf der Kante zwischen zwei benachbarten Feldern */
   door(ax: number, ay: number, bx: number, by: number) {
     const e: Edge = ax === bx ? { x: ax, y: Math.max(ay, by), dir: 'h' } : { x: Math.max(ax, bx), y: ay, dir: 'v' };
@@ -133,6 +158,9 @@ class Builder {
       for (let xx = x; xx < x + f.w; xx++) {
         if (!isFloor(this.m, xx, yy) || this.occupied[yy * this.W + xx] || this.keepFree(xx, yy)) return false;
         if (room !== undefined && this.roomOf[yy * this.W + xx] !== room) return false;
+        // in runden Räumen nur Felder, die ganz im Kreis liegen
+        const q = this.round.get(this.roomOf[yy * this.W + xx]);
+        if (q && (Math.abs(xx + 0.5 - q.cx) + 0.5) ** 2 + (Math.abs(yy + 0.5 - q.cy) + 0.5) ** 2 > q.r * q.r) return false;
       }
     }
     if (type !== 'rug') for (let yy = y; yy < y + f.h; yy++) for (let xx = x; xx < x + f.w; xx++) this.occupied[yy * this.W + xx] = 1;
@@ -304,8 +332,16 @@ function generateDungeon(o: GenOptions): MapDoc {
     placed.push({ x, y, w, h });
   }
   if (!placed.length) placed.push({ x: 2, y: 2, w: Math.min(5, W - 4), h: Math.min(5, H - 4) });
+  const round = new Set<number>();
   for (const q of placed) {
     const id = b.rooms.length;
+    // manche größeren Räume werden rund (Kreis im Rechteck)
+    if (!cave && Math.min(q.w, q.h) >= 5 && r.chance(0.35)) {
+      const d = Math.min(q.w, q.h);
+      b.carveCircle(q.x + q.w / 2, q.y + q.h / 2, d / 2, mat);
+      round.add(id);
+      continue;
+    }
     b.rooms.push(q);
     for (let y = q.y; y < q.y + q.h; y++) {
       for (let x = q.x; x < q.x + q.w; x++) {
@@ -473,7 +509,8 @@ function generateDungeon(o: GenOptions): MapDoc {
         else b.light(i, 5);
         break;
       case 'hall':
-        if (!cave) b.pillars(i);
+        if (round.has(i)) b.ringPillars(i, rooms[i].w >= 7 ? 8 : 6);
+        else if (!cave) b.pillars(i);
         b.scatter(i, cave ? ['boulder', 'bones'] : ['brazier'], 2);
         break;
       case 'barracks':
@@ -557,11 +594,13 @@ function generateTemple(o: GenOptions): MapDoc {
   const cx = Math.floor(W / 2);
   const nx = cx - Math.floor(nw / 2);
   const total = bottom - top + 1;
-  const sanH = Math.max(3, Math.min(4, Math.floor(total * 0.22)));
+  // Allerheiligstes als runde Apsis, wenn genug Höhe da ist (ungerader Durchmesser, mittig über dem Schiff)
+  const apse = total >= 15 ? nw - 2 : 0;
+  const sanH = apse || Math.max(3, Math.min(4, Math.floor(total * 0.22)));
   const narH = 3;
   const naveH = total - sanH - narH - 2;
 
-  const san = b.carveRoom({ x: nx + 1, y: top, w: nw - 2, h: sanH }, marble);
+  const san = apse ? b.carveCircle(cx + 0.5, top + apse / 2, apse / 2, marble) : b.carveRoom({ x: nx + 1, y: top, w: nw - 2, h: sanH }, marble);
   const nave = b.carveRoom({ x: nx, y: top + sanH + 1, w: nw, h: naveH }, marble);
   const nar = b.carveRoom({ x: nx - (sw >= 3 ? 1 : 0), y: bottom - narH + 1, w: nw + (sw >= 3 ? 2 : 0), h: narH }, marble);
   // Öffnungen mit Türen: Allerheiligstes (verschlossen) und Vorhalle
@@ -597,10 +636,17 @@ function generateTemple(o: GenOptions): MapDoc {
 
   // Einrichtung: Allerheiligstes, Hauptschiff, Vorhalle
   const sq = b.rooms[san];
-  b.place('altar', cx - 1, sq.y, 0, san) || b.againstWall(san, 'altar', ['t']);
-  b.place('brazier', sq.x, sq.y, 0, san);
-  b.place('brazier', sq.x + sq.w - 1, sq.y, 0, san);
-  b.scatter(san, ['statue'], 2);
+  if (apse) {
+    // in der Apsis: Altar oben mittig (ganz im Kreis), Feuerschalen darunter links und rechts
+    b.place('altar', cx - 1, sq.y + 1, 0, san) || b.place('altar', cx, sq.y + 1, 0, san) || b.scatter(san, ['altar'], 1);
+    b.place('brazier', cx - 1, sq.y + apse - 2, 0, san) || b.scatter(san, ['brazier'], 1);
+    b.place('brazier', cx + 1, sq.y + apse - 2, 0, san) || b.scatter(san, ['brazier'], 1);
+  } else {
+    b.place('altar', cx - 1, sq.y, 0, san) || b.againstWall(san, 'altar', ['t']);
+    b.place('brazier', sq.x, sq.y, 0, san);
+    b.place('brazier', sq.x + sq.w - 1, sq.y, 0, san);
+  }
+  if (!apse) b.scatter(san, ['statue'], 2);
   const nq = b.rooms[nave];
   for (let y = nq.y + 1; y < nq.y + nq.h - 1; y += 2) {
     b.place('pillar', nq.x, y, 0, nave);

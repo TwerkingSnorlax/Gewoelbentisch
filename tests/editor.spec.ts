@@ -332,3 +332,33 @@ test('Lichter im VTT-Export: neutral, warm oder gar nicht', async ({ page }) => 
   await expect(page.locator('#vttLights')).toHaveValue('none');
   noErrors(errors);
 });
+
+test('Runde Räume: aufziehen, Kreiswand im VTT, Radieren macht normale Felder daraus', async ({ page }) => {
+  const errors = await open(page);
+  const c = (x: number, y: number) => cellPos(page, x, y, SIZE);
+  await page.click('#shapeRound');
+  await expect(page.locator('.hint')).toContainText('runden Raum');
+  // 7 × 7 Felder → Kreis mit Radius 3,5 um (8,5 | 8,5)
+  await drag(page, await c(5, 5), await c(11, 11));
+  let m = await stored(page, (m) => m.circles.length === 1);
+  expect(m.circles[0]).toMatchObject({ cx: 8.5, cy: 8.5, r: 3.5 });
+  const at = (m: any, x: number, y: number) => m.floor[y * m.width + x];
+  expect([at(m, 8, 8), at(m, 5, 8), at(m, 5, 5), at(m, 11, 11)]).toEqual([1, 1, 0, 0]); // Ecken bleiben Fels
+  // Gang von rechts: Durchgang im Kreis bleibt offen
+  await page.click('#shapeRect');
+  await drag(page, await c(12, 8), await c(16, 8));
+  m = await stored(page, (m) => at(m, 14, 8) === 1);
+  const v = JSON.parse((await download(page, () => page.click('header button.primary'))).text);
+  const onCircle = v.line_of_sight.filter((s: any) => Math.abs(Math.hypot(s[0].x - 8.5, s[0].y - 8.5) - 3.5) < 1e-6);
+  expect(onCircle.length).toBeGreaterThan(20);
+  // kein Kreisstück an der Einmündung des Gangs (rechts, auf Höhe y = 8,5)
+  expect(onCircle.some((s: any) => s[0].x > 11.9 && Math.abs((s[0].y + s[1].y) / 2 - 8.5) < 0.3)).toBe(false);
+  // keine Treppenkanten am Kreis: keine Wandsegmente an den Ecken des Rechtecks 5..11
+  expect(v.line_of_sight.some((s: any) => s[0].x === 5 && s[0].y === 5)).toBe(false);
+  // Radieren in den Kreis: Kreis verschwindet, Felder bleiben
+  await tool(page, '5');
+  await drag(page, await c(8, 8), await c(8, 8));
+  m = await stored(page, (m) => m.circles.length === 0);
+  expect([at(m, 8, 8), at(m, 7, 8)]).toEqual([0, 1]);
+  noErrors(errors);
+});

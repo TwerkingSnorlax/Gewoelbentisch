@@ -41,6 +41,10 @@ const de = {
   'hint.object': 'Tippen, um „{name}“ zu platzieren. R dreht.',
   'hint.locked': 'Diese Ebene ist gesperrt oder ausgeblendet (siehe Ebenen).',
 
+  'shape.label': 'Form',
+  'shape.rect': 'Rechteckiger Raum',
+  'shape.round': 'Runder Raum',
+  'hint.room.round': 'Ziehen, um einen runden Raum aufzuziehen (Kreis im Rechteck).',
   'mode.add': 'Hinzufügen',
   'mode.remove': 'Entfernen',
 
