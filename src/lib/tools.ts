@@ -1,6 +1,6 @@
 import type { LayerId } from './map';
 
-export type Tool = 'hand' | 'select' | 'room' | 'brush' | 'eraser' | 'door' | 'light' | 'object';
+export type Tool = 'hand' | 'select' | 'room' | 'brush' | 'eraser' | 'door' | 'light' | 'object' | 'note';
 
 export const TOOLS: { id: Tool; key: string; icon: string; layer?: LayerId }[] = [
   { id: 'hand', key: '1', icon: 'M8 13V5.5a1.5 1.5 0 0 1 3 0V12m0-7v-1a1.5 1.5 0 0 1 3 0V12m0-6.5a1.5 1.5 0 0 1 3 0V12m0-4.5a1.5 1.5 0 0 1 3 0V16a6 6 0 0 1-6 6h-2a6 6 0 0 1-4.6-2.2L4.5 15a1.6 1.6 0 0 1 2.4-2l1.1 1.2' },
@@ -11,4 +11,5 @@ export const TOOLS: { id: Tool; key: string; icon: string; layer?: LayerId }[] =
   { id: 'door', key: '6', icon: 'M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17 M3 21h18 M14 12h.01', layer: 'doors' },
   { id: 'light', key: '7', icon: 'M12 2c1 3 4 4.5 4 8.5A4 4 0 0 1 12 15a4 4 0 0 1-4-4.5C8 7.5 10 6 12 2z M9 18h6 M10 21h4', layer: 'lights' },
   { id: 'object', key: '8', icon: 'M12 3l8 4.5v9L12 21l-8-4.5v-9z M12 12l8-4.5 M12 12v9 M12 12 4 7.5', layer: 'objects' },
+  { id: 'note', key: '9', icon: 'M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z M10 8h2.5v5', layer: 'notes' },
 ];

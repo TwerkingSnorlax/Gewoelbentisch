@@ -511,13 +511,13 @@ export const OBJECTS: Record<ObjectType, ObjectDef> = {
   tree: {
     w: 1, h: 1, category: 'nature', z: 2, blocksSight: true,
     draw(ctx, w, h, c) {
-      canopy(ctx, w / 2, h / 2, c * 0.58, c, '#3f6b35', 'rgba(140,190,90,0.35)');
+      leafCluster(ctx, w / 2, h / 2, c * 0.62, c, 11);
     },
   },
   bigtree: {
     w: 2, h: 2, category: 'nature', z: 2, blocksSight: true,
     draw(ctx, w, h, c) {
-      canopy(ctx, w / 2, h / 2, c * 1.1, c, '#365f2e', 'rgba(140,190,90,0.3)', 9);
+      leafCluster(ctx, w / 2, h / 2, c * 1.15, c, 23);
     },
   },
   pine: {
@@ -543,20 +543,25 @@ export const OBJECTS: Record<ObjectType, ObjectDef> = {
       ctx.fill();
       ctx.restore();
       star(c * 0.56);
-      ctx.fillStyle = '#2c5236';
+      ctx.fillStyle = '#23403a';
       ctx.fill();
-      lw(ctx, c, 0.03);
-      ctx.strokeStyle = 'rgba(15,30,15,0.9)';
+      lw(ctx, c, 0.025);
+      ctx.strokeStyle = FOLIAGE.ink;
       ctx.stroke();
-      star(c * 0.32);
-      ctx.fillStyle = '#3d6e47';
+      star(c * 0.4);
+      ctx.fillStyle = FOLIAGE.mid;
       ctx.fill();
+      ctx.stroke();
+      star(c * 0.2);
+      ctx.fillStyle = FOLIAGE.light;
+      ctx.fill();
+      ctx.stroke();
     },
   },
   bush: {
     w: 1, h: 1, category: 'nature', z: 1,
     draw(ctx, w, h, c) {
-      canopy(ctx, w / 2, h / 2, c * 0.36, c, '#557f3b', 'rgba(170,210,110,0.35)', 6);
+      leafCluster(ctx, w / 2, h / 2, c * 0.4, c, 37);
     },
   },
   stump: {
@@ -633,40 +638,101 @@ export const OBJECTS: Record<ObjectType, ObjectDef> = {
 export const OBJECT_TYPES = Object.keys(OBJECTS) as ObjectType[];
 export const OBJECT_CATEGORIES: ObjectCategory[] = ['vault', 'furniture', 'storage', 'fire', 'nature'];
 
-/** Laubkrone aus mehreren Kreisen (feste Form je Größe), etwas über die Fläche hinaus */
-function canopy(ctx: Ctx, cx: number, cy: number, r: number, c: number, base: string, light: string, lumps = 7) {
-  const parts: [number, number, number][] = [];
-  for (let i = 0; i < lumps; i++) {
-    const a = (i / lumps) * Math.PI * 2 + 0.4;
-    parts.push([cx + Math.cos(a) * r * 0.55, cy + Math.sin(a) * r * 0.55, r * (0.5 + ((i * 37) % 7) * 0.025)]);
-  }
-  parts.push([cx, cy, r * 0.6]);
-  const path = () => {
-    ctx.beginPath();
-    for (const [x, y, rr] of parts) {
-      ctx.moveTo(x + rr, y);
-      ctx.arc(x, y, rr, 0, Math.PI * 2);
-    }
+/** Farben für Laub (gedämpftes Blaugrün, dunkle Kontur) */
+export const FOLIAGE = {
+  dark: '#2c4a40',
+  mid: '#45695a',
+  light: '#7a9c88',
+  ink: '#14211c',
+  shadow: 'rgba(5, 15, 12, 0.38)',
+};
+
+function seeded(seed: number) {
+  let a = (seed * 2654435761) >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
-  // Schatten auf dem Boden
-  ctx.save();
-  ctx.translate(c * 0.12, c * 0.14);
-  ctx.fillStyle = 'rgba(0,0,0,0.28)';
-  path();
-  ctx.fill();
-  ctx.restore();
-  path();
-  ctx.fillStyle = base;
-  ctx.fill();
-  lw(ctx, c, 0.03);
-  ctx.strokeStyle = 'rgba(20,35,15,0.85)';
-  ctx.stroke();
-  // Licht oben links
-  ctx.fillStyle = light;
-  for (const [x, y, rr] of parts.slice(0, Math.ceil(lumps / 2))) {
+}
+
+/** Ein gezacktes Blatt (Stern mit unregelmäßigen Spitzen) als Pfad */
+function leafPath(ctx: Ctx, x: number, y: number, r: number, rnd: () => number) {
+  const n = 7 + Math.floor(rnd() * 3);
+  const rot = rnd() * Math.PI * 2;
+  for (let i = 0; i < n; i++) {
+    const a = rot + (i / n) * Math.PI * 2;
+    const tip = r * (0.88 + rnd() * 0.18);
+    const b = a + Math.PI / n;
+    const valley = r * (0.6 + rnd() * 0.1);
+    const tx = x + Math.cos(a) * tip;
+    const ty = y + Math.sin(a) * tip;
+    if (i === 0) ctx.moveTo(tx, ty);
+    else ctx.lineTo(tx, ty);
+    ctx.lineTo(x + Math.cos(b) * valley, y + Math.sin(b) * valley);
+  }
+  ctx.closePath();
+}
+
+/**
+ * Laubbüschel aus vielen gezackten Blättern in Lagen: außen dunkel, innen mittel, oben links hell.
+ * Mit `shadow` nur den Schlagschatten zeichnen, mit `leaves` nur das Laub (damit bei vielen Büscheln
+ * erst alle Schatten und dann alles Laub gezeichnet werden kann).
+ */
+export function leafCluster(
+  ctx: Ctx,
+  cx: number,
+  cy: number,
+  R: number,
+  c: number,
+  seed: number,
+  part: 'both' | 'shadow' | 'leaves' = 'both',
+) {
+  const rnd = seeded(seed);
+  const leaves: [number, number, number, string][] = [];
+  const outer = Math.max(5, Math.round((R / c) * 8));
+  for (let i = 0; i < outer; i++) {
+    const a = (i / outer) * Math.PI * 2 + rnd() * 0.5;
+    const d = R * (0.55 + rnd() * 0.15);
+    leaves.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d, R * (0.4 + rnd() * 0.1), FOLIAGE.dark]);
+  }
+  const inner = Math.max(3, outer - 2);
+  for (let i = 0; i < inner; i++) {
+    const a = (i / inner) * Math.PI * 2 + rnd();
+    const d = R * (0.22 + rnd() * 0.12);
+    leaves.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d, R * (0.36 + rnd() * 0.08), FOLIAGE.mid]);
+  }
+  leaves.push([cx, cy, R * 0.36, FOLIAGE.mid]);
+  const hi = Math.max(2, Math.round(outer / 2));
+  for (let i = 0; i < hi; i++) {
+    const a = Math.PI * 1.25 + (rnd() - 0.5) * 1.6;
+    const d = R * (0.2 + rnd() * 0.3);
+    leaves.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d, R * (0.18 + rnd() * 0.08), FOLIAGE.light]);
+  }
+  if (part !== 'leaves') {
+    ctx.save();
+    ctx.translate(c * 0.16, c * 0.2);
+    ctx.fillStyle = FOLIAGE.shadow;
     ctx.beginPath();
-    ctx.arc(x - rr * 0.25, y - rr * 0.25, rr * 0.45, 0, Math.PI * 2);
+    const srnd = seeded(seed + 1);
+    for (const [x, y, r, col] of leaves) if (col === FOLIAGE.dark) leafPath(ctx, x, y, r * 1.05, srnd);
+    ctx.arc(cx, cy, R * 0.6, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+  }
+  if (part === 'shadow') return;
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = FOLIAGE.ink;
+  ctx.lineWidth = Math.max(1, c * 0.022);
+  const lrnd = seeded(seed + 2);
+  for (const [x, y, r, col] of leaves) {
+    ctx.beginPath();
+    leafPath(ctx, x, y, r, lrnd);
+    ctx.fillStyle = col;
+    ctx.fill();
+    ctx.stroke();
   }
 }
 

@@ -1,18 +1,20 @@
 // Zeichnet eine Karte auf einen Canvas. Wird vom Editor und vom Export genutzt,
 // damit die exportierte Karte genauso aussieht wie im Editor.
 import { allLights, floorAt, isFloor, materialOf, sortedObjects, wallSegments, type Material, type MapDoc, type StyleId } from './map';
-import { drawObject } from './objects';
+import { drawObject, FOLIAGE, leafCluster } from './objects';
 
 export interface RenderOptions {
   /** Größe eines Feldes in Pixeln */
   cell: number;
   /** Lichtsymbole zeichnen (nur im Editor, nicht im Export) */
   lightMarkers: boolean;
+  /** Raummarken zeichnen (Editor und PNG; nicht im VTT-Bild, das sehen die Spieler) */
+  notes?: boolean;
 }
 
 export interface StyleDef {
   rock: string;
-  texture: 'hatch' | 'bricks' | 'grass' | 'pebbles' | 'meadow';
+  texture: 'hatch' | 'bricks' | 'grass' | 'pebbles' | 'meadow' | 'canopy';
   textureColor: string;
   wall: string;
   wallWidth: number;
@@ -22,6 +24,8 @@ export interface StyleDef {
   material: Material;
   /** Wände an den Rändern der Bodenflächen (aus = freistehend: alles ist begehbar) */
   walls: boolean;
+  /** Wände nicht als Linie, sondern als überhängendes Blätterdach zeichnen (Wald) */
+  canopyWalls?: boolean;
 }
 
 export const STYLE_DEFS: Record<StyleId, StyleDef> = {
@@ -29,7 +33,8 @@ export const STYLE_DEFS: Record<StyleId, StyleDef> = {
   temple: { rock: '#26242b', texture: 'bricks', textureColor: 'rgba(200,190,220,0.16)', wall: '#141318', wallWidth: 0.2, rough: false, material: 'marble', walls: true },
   tavern: { rock: '#3c4a2b', texture: 'grass', textureColor: 'rgba(170,200,110,0.35)', wall: '#3a2414', wallWidth: 0.22, rough: false, material: 'wood', walls: true },
   cave: { rock: '#2b2622', texture: 'pebbles', textureColor: 'rgba(200,180,150,0.25)', wall: '#15110e', wallWidth: 0.2, rough: true, material: 'earth', walls: true },
-  outdoor: { rock: '#6a8a45', texture: 'meadow', textureColor: 'rgba(40,70,25,0.45)', wall: '#3b2a1a', wallWidth: 0.06, rough: true, material: 'earth', walls: false },
+  forest: { rock: '#1d2b28', texture: 'canopy', textureColor: 'rgba(0,0,0,0)', wall: FOLIAGE.ink, wallWidth: 0.08, rough: true, material: 'grass', walls: true, canopyWalls: true },
+  grassland: { rock: '#6a8a45', texture: 'meadow', textureColor: 'rgba(40,70,25,0.45)', wall: '#3b2a1a', wallWidth: 0.06, rough: true, material: 'earth', walls: false },
 };
 
 export const COLORS = {
@@ -197,6 +202,24 @@ export function drawFloorCell(ctx: CanvasRenderingContext2D, mat: Material, x: n
       }
       break;
     }
+    case 'grass': {
+      // heller, gedämpfter Waldboden mit feinen Halmen
+      ctx.fillStyle = shade([168, 184, 140], Math.round(v / 2));
+      ctx.fillRect(px, py, c + 0.5, c + 0.5);
+      ctx.strokeStyle = 'rgba(70, 95, 60, 0.3)';
+      ctx.lineWidth = Math.max(1, c * 0.02);
+      ctx.beginPath();
+      for (let i = 0; i < 2; i++) {
+        const gx = px + (0.2 + rand(x, y, 80 + i) * 0.6) * c;
+        const gy = py + (0.3 + rand(x, y, 90 + i) * 0.6) * c;
+        ctx.moveTo(gx - c * 0.04, gy);
+        ctx.lineTo(gx - c * 0.06, gy - c * 0.08);
+        ctx.moveTo(gx + c * 0.04, gy);
+        ctx.lineTo(gx + c * 0.06, gy - c * 0.08);
+      }
+      ctx.stroke();
+      break;
+    }
     case 'water': {
       ctx.fillStyle = shade([79, 134, 181], Math.round(v / 2));
       ctx.fillRect(px, py, c + 0.5, c + 0.5);
@@ -235,7 +258,32 @@ function wallPath(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: num
 }
 
 /** Kanten zwischen verschiedenen Böden (für freistehende Karten): dunkler Saum, am Wasser ein helles Ufer */
-function drawMaterialEdges(ctx: CanvasRenderingContext2D, m: MapDoc, c: number) {
+/**
+ * Fels-Felder, die zwischen zwei Bodenflächen liegen (links und rechts oder oben und unten Boden),
+ * sind Innenwände; dazu Kreuzungen solcher Wände. Sie werden in Wandfarbe gefüllt.
+ */
+function drawInnerWalls(ctx: CanvasRenderingContext2D, m: MapDoc, s: StyleDef, c: number) {
+  const W = m.width;
+  const wall = new Uint8Array(W * m.height);
+  for (let y = 0; y < m.height; y++)
+    for (let x = 0; x < W; x++) {
+      if (isFloor(m, x, y)) continue;
+      if ((isFloor(m, x - 1, y) && isFloor(m, x + 1, y)) || (isFloor(m, x, y - 1) && isFloor(m, x, y + 1))) wall[y * W + x] = 1;
+    }
+  const isWall = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < m.height && wall[y * W + x] === 1;
+  for (let y = 0; y < m.height; y++)
+    for (let x = 0; x < W; x++) {
+      if (isFloor(m, x, y) || wall[y * W + x]) continue;
+      const floorN = [isFloor(m, x - 1, y), isFloor(m, x + 1, y), isFloor(m, x, y - 1), isFloor(m, x, y + 1)].filter(Boolean).length;
+      const wallN = [isWall(x - 1, y), isWall(x + 1, y), isWall(x, y - 1), isWall(x, y + 1)].filter(Boolean).length;
+      if (floorN >= 1 && wallN >= 2) wall[y * W + x] = 2;
+    }
+  ctx.fillStyle = s.wall;
+  for (let y = 0; y < m.height; y++) for (let x = 0; x < W; x++) if (wall[y * W + x]) ctx.fillRect(x * c - 0.5, y * c - 0.5, c + 1, c + 1);
+}
+
+/** Mit `insideOnly` nur Kanten zwischen zwei Böden (nicht zum Fels) */
+function drawMaterialEdges(ctx: CanvasRenderingContext2D, m: MapDoc, c: number, insideOnly = false) {
   const water = 5;
   const edges: { x1: number; y1: number; x2: number; y2: number; shore: boolean }[] = [];
   for (let y = 0; y <= m.height; y++) {
@@ -243,13 +291,13 @@ function drawMaterialEdges(ctx: CanvasRenderingContext2D, m: MapDoc, c: number) 
       const here = floorAt(m, x, y);
       if (x < m.width && y > 0) {
         const up = floorAt(m, x, y - 1);
-        if (up !== here) edges.push({ x1: x, y1: y, x2: x + 1, y2: y, shore: up === water || here === water });
+        if (up !== here && (!insideOnly || (up && here))) edges.push({ x1: x, y1: y, x2: x + 1, y2: y, shore: up === water || here === water });
       } else if (x < m.width && y === 0) {
         // Kartenrand: keine Kante
       }
       if (y < m.height && x > 0) {
         const left = floorAt(m, x - 1, y);
-        if (left !== here) edges.push({ x1: x, y1: y, x2: x, y2: y + 1, shore: left === water || here === water });
+        if (left !== here && (!insideOnly || (left && here))) edges.push({ x1: x, y1: y, x2: x, y2: y + 1, shore: left === water || here === water });
       }
     }
   }
@@ -267,6 +315,61 @@ function drawMaterialEdges(ctx: CanvasRenderingContext2D, m: MapDoc, c: number) 
       wallPath(ctx, e.x1, e.y1, e.x2, e.y2, c, true);
     }
     ctx.stroke();
+  }
+}
+
+/**
+ * Geschlossener Wald: Blätterdach auf den Fels-Feldern am Rand der Lichtungen, über den Rand der Lichtung
+ * hängend. Erst alle Schatten, dann das Laub (hintere Reihe zuerst).
+ */
+function drawCanopy(ctx: CanvasRenderingContext2D, m: MapDoc, c: number) {
+  const items: { x: number; y: number; r: number; seed: number; d: number }[] = [];
+  for (let y = 0; y < m.height; y++) {
+    for (let x = 0; x < m.width; x++) {
+      if (isFloor(m, x, y)) continue;
+      // Abstand zum nächsten Boden (Schachbrett-Distanz bis 2)
+      let d = 3;
+      for (let dy = -2; dy <= 2 && d > 1; dy++)
+        for (let dx = -2; dx <= 2; dx++) if (isFloor(m, x + dx, y + dy)) d = Math.min(d, Math.max(Math.abs(dx), Math.abs(dy)));
+      if (d > 2 || (d === 2 && rand(x, y, 31) < 0.35)) continue;
+      // zum Boden hin versetzen, damit das Laub über die Kante hängt
+      let ox = 0;
+      let oy = 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (isFloor(m, x + dx, y + dy)) (ox += dx), (oy += dy);
+      const jx = (rand(x, y, 32) - 0.5) * 0.3;
+      const jy = (rand(x, y, 33) - 0.5) * 0.3;
+      items.push({
+        x: (x + 0.5 + ox * 0.18 + jx) * c,
+        y: (y + 0.5 + oy * 0.18 + jy) * c,
+        r: c * (d === 1 ? 0.72 + rand(x, y, 34) * 0.2 : 0.9 + rand(x, y, 35) * 0.25),
+        seed: x * 7919 + y * 104729,
+        d,
+      });
+    }
+  }
+  items.sort((a, b) => b.d - a.d);
+  for (const it of items) leafCluster(ctx, it.x, it.y, it.r, c, it.seed, 'shadow');
+  for (const it of items) leafCluster(ctx, it.x, it.y, it.r, c, it.seed, 'leaves');
+}
+
+/** Nummerierte Raummarken (Kreis mit Zahl) */
+export function drawNotes(ctx: CanvasRenderingContext2D, m: MapDoc, c: number) {
+  const r = c * 0.32;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const n of m.notes) {
+    const x = n.x * c;
+    const y = n.y * c;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#7b1f1a';
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, c * 0.05);
+    ctx.strokeStyle = '#f4e7c8';
+    ctx.stroke();
+    ctx.fillStyle = '#f4e7c8';
+    ctx.font = `700 ${Math.round(c * (n.n > 9 ? 0.3 : 0.36))}px system-ui, sans-serif`;
+    ctx.fillText(String(n.n), x, y + c * 0.01);
   }
 }
 
@@ -289,6 +392,8 @@ export function renderMap(ctx: CanvasRenderingContext2D, m: MapDoc, o: RenderOpt
         if (mat) drawFloorCell(ctx, mat, x, y, c);
       }
     }
+    // Innenwände: ein Fels-Feld zwischen zwei Räumen wird als massive Wand gezeichnet
+    if (s.walls && !s.canopyWalls) drawInnerWalls(ctx, m, s, c);
   }
 
   // Raster nur auf dem Boden
@@ -307,6 +412,11 @@ export function renderMap(ctx: CanvasRenderingContext2D, m: MapDoc, o: RenderOpt
 
   // Freistehend: weiche Ränder zwischen Wiese, Wegen und Wasser statt Wänden
   if (!s.walls && L.floor.visible) drawMaterialEdges(ctx, m, c);
+  // Wald: Kanten zwischen Böden innerhalb der Lichtungen weich, Ränder als Blätterdach
+  if (s.canopyWalls && L.floor.visible) {
+    drawMaterialEdges(ctx, m, c, true);
+    drawCanopy(ctx, m, c);
+  }
 
   // Objekte
   if (L.objects.visible) {
@@ -314,7 +424,7 @@ export function renderMap(ctx: CanvasRenderingContext2D, m: MapDoc, o: RenderOpt
   }
 
   // Wände (Schatten, dann Linie)
-  if (L.floor.visible && s.walls) {
+  if (L.floor.visible && s.walls && !s.canopyWalls) {
     const segs = wallSegments(m);
     ctx.lineCap = 'square';
     ctx.lineJoin = 'round';
@@ -382,4 +492,6 @@ export function renderMap(ctx: CanvasRenderingContext2D, m: MapDoc, o: RenderOpt
       ctx.stroke();
     }
   }
+
+  if (o.notes && L.notes.visible) drawNotes(ctx, m, c);
 }

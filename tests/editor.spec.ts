@@ -82,7 +82,8 @@ test('Objekte platzieren, verschieben, drehen, duplizieren, löschen; Sichtblock
   m = await stored(page, (m) => m.objects[0].y === 6);
   expect([m.objects[0].x, m.objects[0].y]).toEqual([4, 6]);
 
-  // Altar drehen (2×1 → 1×2), duplizieren, Kopie löschen
+  // Altar drehen (2×1 → 1×2), duplizieren, Kopie löschen (vorher Auswahl aufheben: die Leiste liegt über der Säule)
+  await page.keyboard.press('Escape');
   await page.mouse.click((await c(7, 4)).x, (await c(7, 4)).y);
   await page.click('#objRotate');
   m = await stored(page, (m) => m.objects[1].rot === 90);
@@ -124,10 +125,10 @@ test('Ebenen: gesperrte Ebene lässt sich nicht bearbeiten, ausgeblendete fehlt 
   noErrors(errors);
 });
 
-test('Zufallsgenerator: alle Stile, gleicher Startwert ergibt dieselbe Karte', async ({ page }) => {
+test('Zufallsgenerator: alle Stile mit Eingang, Raummarken und Geschichte; gleicher Startwert ergibt dieselbe Karte', async ({ page }) => {
   const errors = await open(page);
   const results: Record<string, any> = {};
-  for (const style of ['dungeon', 'temple', 'tavern', 'cave', 'outdoor']) {
+  for (const style of ['dungeon', 'temple', 'tavern', 'cave', 'forest', 'grassland']) {
     await page.click('#btnGenerate');
     await page.selectOption('#genStyle', style);
     await page.fill('#genSeed', '1234');
@@ -135,23 +136,45 @@ test('Zufallsgenerator: alle Stile, gleicher Startwert ergibt dieselbe Karte', a
     results[style] = await stored(page, (m) => m.style === style);
     await page.keyboard.press('Escape');
   }
+  const edge = (m: any) => {
+    for (let x = 0; x < m.width; x++) if (m.floor[x] > 0 || m.floor[(m.height - 1) * m.width + x] > 0) return true;
+    for (let y = 0; y < m.height; y++) if (m.floor[y * m.width] > 0 || m.floor[y * m.width + m.width - 1] > 0) return true;
+    return false;
+  };
   for (const [style, m] of Object.entries(results)) {
-    expect(m.floor.filter((v: number) => v > 0).length, style).toBeGreaterThan(style === 'outdoor' ? 20 : 100);
+    expect(m.floor.filter((v: number) => v > 0).length, style).toBeGreaterThan(style === 'grassland' ? 20 : 60);
     expect(m.objects.length, style).toBeGreaterThan(3);
-    if (style !== 'cave' && style !== 'outdoor') expect(m.doors.length, style).toBeGreaterThan(0);
+    expect(edge(m), `${style}: Eingang am Kartenrand`).toBe(true);
+    expect(m.notes.length, style).toBeGreaterThan(2);
+    expect(m.notes.map((n: any) => n.n), style).toEqual(m.notes.map((_: any, i: number) => i + 1));
+    expect(m.story.length, style).toBeGreaterThan(20);
+    expect(m.name, style).not.toBe('Neue Karte');
+    if (['dungeon', 'temple', 'tavern'].includes(style)) expect(m.doors.length, style).toBeGreaterThan(0);
   }
-  // Wald & Grasland: Wege und Wasser, Bäume, keine Wände im VTT, Bäume blockieren die Sicht
-  const out = results.outdoor;
-  expect(out.floor.includes(4)).toBe(true); // Erdweg
-  expect(out.objects.some((o: any) => ['tree', 'pine', 'bigtree'].includes(o.type))).toBe(true);
-  await page.click('#btnGenerate');
-  await page.selectOption('#genStyle', 'outdoor');
-  await page.click('#genCreate');
-  await stored(page, (m) => m.style === 'outdoor');
-  await page.keyboard.press('Escape');
-  const v = JSON.parse((await download(page, () => page.click('header button.primary'))).text);
-  expect(v.line_of_sight).toEqual([]);
-  expect(v.objects_line_of_sight.length).toBeGreaterThan(3);
+  // Gewölbe: erste Marke ist der Eingang, das Ziel kommt zuletzt
+  expect(results.dungeon.notes[0].title).toBe('Eingang');
+  // Taverne und Tempel haben ihre typischen Räume
+  expect(results.tavern.notes.map((n: any) => n.title)).toEqual(expect.arrayContaining(['Schankraum', 'Küche']));
+  expect(results.temple.notes.map((n: any) => n.title)).toEqual(expect.arrayContaining(['Vorhalle', 'Hauptschiff', 'Allerheiligstes']));
+  // Wald und Grasland: Weg von Rand zu Rand
+  for (const st of ['forest', 'grassland']) {
+    const m = results[st];
+    const col = (x: number) => [...Array(m.height).keys()].some((y) => m.floor[y * m.width + x] === 4);
+    expect([col(0), col(m.width - 1)], st).toEqual([true, true]);
+    expect(m.notes[0].title).toBe('Anfang des Wegs');
+    expect(m.notes.at(-1).title).toBe('Ende des Wegs');
+  }
+  // VTT: Grasland ohne Wände, Wald mit Wänden (Blätterdach), Bäume blockieren die Sicht
+  for (const [st, walls] of [['grassland', false], ['forest', true]] as const) {
+    await page.click('#btnGenerate');
+    await page.selectOption('#genStyle', st);
+    await page.click('#genCreate');
+    await stored(page, (m) => m.style === st);
+    await page.keyboard.press('Escape');
+    const v = JSON.parse((await download(page, () => page.click('header button.primary'))).text);
+    expect(v.line_of_sight.length > 0, st).toBe(walls);
+    if (st === 'grassland') expect(v.objects_line_of_sight.length).toBeGreaterThan(3);
+  }
   // nochmal Gewölbe mit demselben Startwert
   await page.click('#btnGenerate');
   await page.selectOption('#genStyle', 'dungeon');
@@ -159,9 +182,52 @@ test('Zufallsgenerator: alle Stile, gleicher Startwert ergibt dieselbe Karte', a
   const again = await stored(page, (m) => m.style === 'dungeon');
   expect(again.floor).toEqual(results.dungeon.floor);
   expect(again.objects.map((o: any) => [o.type, o.x, o.y])).toEqual(results.dungeon.objects.map((o: any) => [o.type, o.x, o.y]));
-  // Rückgängig führt zur vorherigen Karte (Wald & Grasland)
+  expect(again.notes.map((n: any) => n.title)).toEqual(results.dungeon.notes.map((n: any) => n.title));
+  // Rückgängig führt zur vorherigen Karte
   await page.keyboard.press('Control+z');
-  await stored(page, (m) => m.style === 'outdoor');
+  await stored(page, (m) => m.style === 'forest');
+  noErrors(errors);
+});
+
+test('Raummarken: setzen, beschreiben, löschen; Leiste über Objekten und Radierer entfernen Objekte', async ({ page }) => {
+  const errors = await open(page);
+  const c = (x: number, y: number) => cellPos(page, x, y, SIZE);
+  await drag(page, await c(3, 3), await c(12, 9));
+
+  // Marke setzen öffnet die Beschreibung
+  await tool(page, '9');
+  await page.mouse.click((await c(5, 5)).x, (await c(5, 5)).y);
+  await expect(page.locator('#panelNotes')).toBeVisible();
+  await page.locator('#panelNotes .note-item input').first().fill('Wachstube');
+  await page.locator('#panelNotes .note-item textarea').first().fill('Zwei Wachen würfeln.');
+  let m = await stored(page, (m) => m.notes[0]?.title === 'Wachstube' && m.notes[0]?.text === 'Zwei Wachen würfeln.');
+  expect(m.notes[0]).toMatchObject({ n: 1, x: 5.5, y: 5.5 });
+  await page.keyboard.press('Escape');
+  await page.mouse.click((await c(8, 5)).x, (await c(8, 5)).y);
+  await stored(page, (m) => m.notes.length === 2 && m.notes[1].n === 2);
+  await page.click('#panelNotes .note-item button[aria-label="Marke löschen"]');
+  m = await stored(page, (m) => m.notes.length === 1);
+  expect(m.notes[0]).toMatchObject({ n: 1, title: '' }); // neu nummeriert
+  await page.keyboard.press('Escape');
+
+  // Objekt setzen: Leiste darüber, Löschen entfernt es
+  await tool(page, '8');
+  await page.click('[data-object=chest]');
+  await page.mouse.click((await c(10, 7)).x, (await c(10, 7)).y);
+  await stored(page, (m) => m.objects.length === 1);
+  await expect(page.locator('.obj-toolbar')).toBeVisible();
+  await page.click('#objDeleteFloat');
+  await stored(page, (m) => m.objects.length === 0);
+  await expect(page.locator('.obj-toolbar')).toHaveCount(0);
+
+  // Radierer entfernt Objekte
+  await page.click('[data-object=barrel]');
+  await page.mouse.click((await c(6, 8)).x, (await c(6, 8)).y);
+  await stored(page, (m) => m.objects.length === 1);
+  await tool(page, '5');
+  await drag(page, await c(6, 8), await c(6, 8));
+  m = await stored(page, (m) => m.objects.length === 0);
+  expect(m.floor[8 * m.width + 6]).toBe(0);
   noErrors(errors);
 });
 
@@ -170,8 +236,9 @@ test('Projektdatei speichern und öffnen (auch das alte Format 1)', async ({ pag
   await page.click('#btnGenerate');
   await page.click('#genCreate');
   const before = await stored(page, (m) => m.objects.length > 0);
+  await page.fill('.map-name', 'Grab des Fürsten Völund');
   const saved = await download(page, () => page.click('button[title="Speichern"]'));
-  expect(saved.name).toBe('Neue_Karte.gewoelbe.json');
+  expect(saved.name).toBe('Grab_des_Fuersten_Voelund.gewoelbe.json'); // Umlaute umgeschrieben
 
   await page.locator('input[type=file]').setInputFiles({
     name: 'alt.gewoelbe.json',
@@ -183,7 +250,7 @@ test('Projektdatei speichern und öffnen (auch das alte Format 1)', async ({ pag
 
   await page.locator('input[type=file]').setInputFiles({ name: 'k.gewoelbe.json', mimeType: 'application/json', buffer: Buffer.from(saved.text) });
   const back = await stored(page, (m) => m.name !== 'Alt');
-  expect(back).toEqual(before);
+  expect(back).toEqual({ ...before, name: 'Grab des Fürsten Völund' });
   noErrors(errors);
 });
 

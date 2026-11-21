@@ -24,18 +24,29 @@ function exportPixelsPerGrid(m: MapDoc): number {
   return Math.max(16, Math.min(EXPORT_PPG, Math.floor(MAX_CANVAS_SIDE / largest)));
 }
 
-export function renderToCanvas(m: MapDoc): { canvas: HTMLCanvasElement; ppg: number } {
+export function renderToCanvas(m: MapDoc, notes = false): { canvas: HTMLCanvasElement; ppg: number } {
   const ppg = exportPixelsPerGrid(m);
   const canvas = document.createElement('canvas');
   canvas.width = m.width * ppg;
   canvas.height = m.height * ppg;
   const ctx = canvas.getContext('2d')!;
-  renderMap(ctx, m, { cell: ppg, lightMarkers: false });
+  renderMap(ctx, m, { cell: ppg, lightMarkers: false, notes });
   return { canvas, ppg };
 }
 
+/**
+ * Dateiname aus dem Kartennamen. Chromium verwirft Download-Namen mit Umlauten (Datei heißt dann
+ * „download“), darum werden Umlaute umgeschrieben und übrige Sonderzeichen entfernt.
+ */
 export function fileBaseName(m: MapDoc, fallback: string): string {
-  const name = (m.name || fallback).trim().replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '_');
+  const map: Record<string, string> = { ä: 'ae', ö: 'oe', ü: 'ue', Ä: 'Ae', Ö: 'Oe', Ü: 'Ue', ß: 'ss' };
+  const name = (m.name || fallback)
+    .trim()
+    .replace(/[äöüÄÖÜß]/g, (ch) => map[ch])
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '') // Akzente (é → e)
+    .replace(/\s+/g, '_')
+    .replace(/[^A-Za-z0-9_.-]+/g, '');
   return name || 'karte';
 }
 
@@ -51,7 +62,7 @@ export function download(blob: Blob, filename: string): void {
 }
 
 export async function exportPng(m: MapDoc, base: string): Promise<void> {
-  const { canvas } = renderToCanvas(m);
+  const { canvas } = renderToCanvas(m, true);
   const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/png'));
   if (!blob) throw new Error('PNG konnte nicht erzeugt werden');
   download(blob, `${base}.png`);

@@ -44,6 +44,10 @@
     oncancel: () => void;
     /** Werkzeug auf einer gesperrten Ebene benutzt */
     onlocked?: () => void;
+    /** Raummarke angetippt oder neu gesetzt */
+    onnote?: (id: string) => void;
+    /** Bildschirm-Rechteck des ausgewählten Objekts (für die Leiste darüber) */
+    selectionBox?: { x: number; y: number; w: number; h: number } | null;
   }
 
   let {
@@ -60,6 +64,8 @@
     onchange,
     oncancel,
     onlocked,
+    onnote,
+    selectionBox = $bindable(null),
   }: Props = $props();
 
   /** Feldgröße in Bildschirmpixeln bei Zoom 1 */
@@ -219,6 +225,7 @@
         begin();
         changed = setFloor(map, x, y, value) || changed;
       }
+      if (erasing && removeObjects(x, y, x, y)) changed = true;
       if (x === b.x && y === b.y) break;
       const e2 = 2 * err;
       if (e2 >= dy) {
@@ -235,6 +242,20 @@
       onchange();
     }
     return b;
+  }
+
+  /** Radieren entfernt auch Objekte, die das Rechteck (Felder) berühren */
+  function removeObjects(x0: number, y0: number, x1: number, y1: number): boolean {
+    if (map.layers.objects.locked || !map.layers.objects.visible) return false;
+    const keep = map.objects.filter((o) => {
+      const f = footprint(o);
+      return o.x + f.w - 1 < x0 || o.x > x1 || o.y + f.h - 1 < y0 || o.y > y1;
+    });
+    if (keep.length === map.objects.length) return false;
+    begin();
+    map.objects = keep;
+    if (selectedId && !keep.some((o) => o.id === selectedId)) selectedId = null;
+    return true;
   }
 
   function startPinch() {
@@ -311,6 +332,25 @@
         map.objects = [...map.objects, obj];
         selectedId = obj.id;
         onchange();
+        break;
+      }
+      case 'note': {
+        mode = 'none';
+        const hit = map.notes.find((n) => Math.hypot(n.x - m.x, n.y - m.y) < 0.6);
+        if (hit) {
+          onnote?.(hit.id);
+          break;
+        }
+        const g = makeRoom(cell.x, cell.y, cell.x, cell.y);
+        cell.x += g.dx;
+        cell.y += g.dy;
+        if (!inBounds(map, cell.x, cell.y)) break;
+        begin();
+        const n = Math.max(0, ...map.notes.map((q) => q.n)) + 1;
+        const note = { id: newId(), n, x: cell.x + 0.5, y: cell.y + 0.5, title: '', text: '' };
+        map.notes = [...map.notes, note];
+        onchange();
+        onnote?.(note.id);
         break;
       }
       case 'room':
@@ -425,7 +465,8 @@
         Math.max(rectStart.y, rectEnd.y) >= 0 &&
         Math.min(rectStart.y, rectEnd.y) < map.height;
       if (rectInMap) {
-        if (fillRect(map, x0, y0, x1, y1, erasing ? 0 : material)) {
+        const removed = erasing && removeObjects(x0, y0, x1, y1);
+        if (fillRect(map, x0, y0, x1, y1, erasing ? 0 : material) || removed) {
           cleanupDoors(map);
           onchange();
         } else if (map.width === lastW && map.height === lastH) {
@@ -485,7 +526,7 @@
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.setTransform(dpr * cam.zoom, 0, 0, dpr * cam.zoom, dpr * cam.x, dpr * cam.y);
-    renderMap(ctx, map, { cell: CELL, lightMarkers: true });
+    renderMap(ctx, map, { cell: CELL, lightMarkers: true, notes: true });
 
     const px = 1 / cam.zoom;
     // Kartenrand
@@ -495,6 +536,12 @@
 
     // Auswahl
     const sel = selectedId ? map.objects.find((o) => o.id === selectedId) : null;
+    const box = sel && map.layers.objects.visible && (tool === 'select' || tool === 'object') ? footprint(sel) : null;
+    const nextBox =
+      sel && box
+        ? { x: cam.x + sel.x * CELL * cam.zoom, y: cam.y + sel.y * CELL * cam.zoom, w: box.w * CELL * cam.zoom, h: box.h * CELL * cam.zoom }
+        : null;
+    if (JSON.stringify(nextBox) !== JSON.stringify(selectionBox)) selectionBox = nextBox;
     if (sel && map.layers.objects.visible) {
       const f = footprint(sel);
       ctx.save();

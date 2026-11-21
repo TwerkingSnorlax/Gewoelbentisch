@@ -55,7 +55,9 @@
   let objectType = $state<ObjectType>('pillar');
   let objectRot = $state<Rotation>(0);
   let selectedId = $state<string | null>(null);
-  let panel = $state<'settings' | 'layers' | 'generate' | null>(null);
+  type Panel = 'settings' | 'layers' | 'generate' | 'notes';
+  let panel = $state<Panel | null>(null);
+  let selectionBox = $state<{ x: number; y: number; w: number; h: number } | null>(null);
   let lockedHint = $state(false);
   let widthInput = $state(initialMap.width);
   let heightInput = $state(initialMap.height);
@@ -230,16 +232,20 @@
     scheduleAutosave();
   }
 
+  // Name der zuletzt erzeugten Karte: solange der Name nicht von Hand geändert wurde, erzeugt der Generator einen neuen
+  let generatedName = '';
   function generate() {
     pushHistory();
+    const autoName = !map.name || map.name === $t('map.defaultName') || map.name === generatedName;
     const next = generateMap({
       width: clampSize(widthInput),
       height: clampSize(heightInput),
       rooms: gen.rooms,
       style: gen.style,
       seed: gen.seed,
-      name: map.name || $t('map.defaultName'),
+      name: autoName ? '' : map.name,
     });
+    generatedName = next.name;
     material = STYLE_DEFS[gen.style].material;
     replaceMap(next);
     canvasRef?.fit();
@@ -371,10 +377,40 @@
 
   /** Name eines Bodens, im Außenbereich passend benannt (Erde → Erdweg …) */
   function materialName(mat: Material): string {
-    return mapStyle === 'outdoor' ? $t(`material.outdoor.${mat}`) : $t(`material.${mat}`);
+    return mapStyle === 'forest' || mapStyle === 'grassland' ? $t(`material.out.${mat}`) : $t(`material.${mat}`);
   }
 
-  function togglePanel(p: 'settings' | 'layers' | 'generate') {
+  /* ---- Raummarken ---- */
+  const notes = $derived(rev >= 0 ? [...map.notes].sort((a, c) => a.n - c.n) : []);
+  const story = $derived(rev >= 0 ? map.story : '');
+
+  function openNote(id: string) {
+    panel = 'notes';
+    // nach dem Öffnen zum Eintrag scrollen und den Titel fokussieren
+    setTimeout(() => {
+      const el = document.getElementById(`note-${id}`);
+      el?.scrollIntoView({ block: 'nearest' });
+      (el?.querySelector('input') as HTMLInputElement | null)?.focus();
+    }, 30);
+  }
+  function editNote(id: string, key: 'title' | 'text', value: string) {
+    const n = map.notes.find((q) => q.id === id);
+    if (!n) return;
+    n[key] = value;
+    scheduleAutosave();
+  }
+  function deleteNote(id: string) {
+    edit((m) => {
+      m.notes = m.notes.filter((q) => q.id !== id).sort((a, c) => a.n - c.n);
+      m.notes.forEach((q, i) => (q.n = i + 1)); // lückenlos neu nummerieren
+    });
+  }
+  function editStory(value: string) {
+    map.story = value;
+    scheduleAutosave();
+  }
+
+  function togglePanel(p: Panel) {
     panel = panel === p ? null : p;
   }
 </script>
@@ -422,6 +458,10 @@
         <svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5M20 9H9a5 5 0 0 0 0 10h3" /></svg>
       </button>
       <span class="sep"></span>
+      <button id="btnNotes" onclick={() => togglePanel('notes')} class:active={panel === 'notes'} title={$t('notes.title')}>
+        <svg viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z M9 10h6 M9 14h6 M9 18h3" /></svg>
+        <span class="optional">{$t('notes.button')}</span>
+      </button>
       <button id="btnGenerate" onclick={() => togglePanel('generate')} class:active={panel === 'generate'} title={$t('gen.title')}>
         <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z M8.5 8.5h.01 M15.5 8.5h.01 M12 12h.01 M8.5 15.5h.01 M15.5 15.5h.01" /></svg>
         <span class="optional">{$t('action.generate')}</span>
@@ -497,7 +537,31 @@
           {onchange}
           {oncancel}
           {onlocked}
+          onnote={openNote}
+          bind:selectionBox
         />
+
+        {#if selected && selectionBox}
+          <div
+            class="obj-toolbar"
+            role="toolbar"
+            style:left="{selectionBox.x + selectionBox.w / 2}px"
+            style:top="{selectionBox.y > 64 ? selectionBox.y - 56 : selectionBox.y + selectionBox.h + 10}px"
+          >
+            <button id="objRotateFloat" onclick={rotate} title={$t('objects.rotate')}>
+              <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7 M20 4v7h-7" /></svg>
+              <span>{$t('objects.rotate')}</span>
+            </button>
+            <button id="objDuplicateFloat" onclick={duplicateSelected} title={$t('objects.duplicate')}>
+              <svg viewBox="0 0 24 24"><path d="M8 8h12v12H8z M4 16V4h12" /></svg>
+              <span>{$t('objects.duplicate')}</span>
+            </button>
+            <button id="objDeleteFloat" class="danger" onclick={deleteSelected} title={$t('objects.delete')}>
+              <svg viewBox="0 0 24 24"><path d="M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13 M10 11v6 M14 11v6" /></svg>
+              <span>{$t('objects.delete')}</span>
+            </button>
+          </div>
+        {/if}
 
         {#if tool === 'object'}
           <aside class="palette" aria-label={$t('objects.title')}>
@@ -682,7 +746,7 @@
             </label>
           </div>
           <label>
-            {$t('gen.rooms')}: {gen.rooms}
+            {gen.style === 'forest' || gen.style === 'grassland' ? $t('gen.rooms.forest') : $t('gen.rooms')}: {gen.rooms}
             <input id="genRooms" type="range" min="2" max="20" bind:value={gen.rooms} />
           </label>
           <div class="row end">
@@ -696,6 +760,42 @@
           </div>
           <button id="genCreate" class="block primary-block" onclick={generate}>{$t('gen.create')}</button>
           <p class="note">{$t('gen.note')}</p>
+        </aside>
+      {:else if panel === 'notes'}
+        <aside class="panel notes-panel" id="panelNotes">
+          <h2>{$t('notes.title')}</h2>
+          <label>
+            {$t('notes.story')}
+            <textarea id="storyText" rows="3" value={story} oninput={(e) => editStory(e.currentTarget.value)}></textarea>
+          </label>
+          {#if notes.length === 0}
+            <p class="note">{$t('notes.empty')}</p>
+          {/if}
+          {#each notes as n (n.id)}
+            <div class="note-item" id="note-{n.id}">
+              <div class="note-head">
+                <span class="note-badge">{n.n}</span>
+                <input
+                  type="text"
+                  value={n.title}
+                  placeholder={$t('notes.titlePlaceholder')}
+                  aria-label={$t('notes.titlePlaceholder')}
+                  oninput={(e) => editNote(n.id, 'title', e.currentTarget.value)}
+                />
+                <button class="icon-toggle" title={$t('notes.delete')} aria-label={$t('notes.delete')} onclick={() => deleteNote(n.id)}>
+                  <svg viewBox="0 0 24 24"><path d="M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13" /></svg>
+                </button>
+              </div>
+              <textarea
+                rows="2"
+                value={n.text}
+                placeholder={$t('notes.textPlaceholder')}
+                aria-label={$t('notes.textPlaceholder')}
+                oninput={(e) => editNote(n.id, 'text', e.currentTarget.value)}
+              ></textarea>
+            </div>
+          {/each}
+          <button class="block" onclick={() => (panel = null)}>{$t('settings.close')}</button>
         </aside>
       {/if}
     </div>

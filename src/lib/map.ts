@@ -34,19 +34,31 @@ export interface MapObject {
 }
 
 /** Bodenmaterialien; 0 im Feld-Array bedeutet Fels */
-export const MATERIALS = ['stone', 'wood', 'marble', 'earth', 'water'] as const;
+// neue Materialien nur hinten anfügen: die Nummer im Feld-Array ist die Position + 1
+export const MATERIALS = ['stone', 'wood', 'marble', 'earth', 'water', 'grass'] as const;
 export type Material = (typeof MATERIALS)[number];
 export const materialId = (m: Material): number => MATERIALS.indexOf(m) + 1;
 export const materialOf = (id: number): Material | null => MATERIALS[id - 1] ?? null;
 
-export const STYLES = ['dungeon', 'temple', 'tavern', 'cave', 'outdoor'] as const;
+export const STYLES = ['dungeon', 'temple', 'tavern', 'cave', 'forest', 'grassland'] as const;
 export type StyleId = (typeof STYLES)[number];
 
-export const LAYERS = ['floor', 'objects', 'doors', 'lights', 'grid'] as const;
+export const LAYERS = ['floor', 'objects', 'doors', 'lights', 'notes', 'grid'] as const;
 export type LayerId = (typeof LAYERS)[number];
 export interface LayerState {
   visible: boolean;
   locked: boolean;
+}
+
+/** Nummerierte Raummarke mit Beschreibung (z. B. vom Generator) */
+export interface Note {
+  id: string;
+  n: number;
+  /** Mitte der Marke in Feldern */
+  x: number;
+  y: number;
+  title: string;
+  text: string;
 }
 
 export interface MapDoc {
@@ -60,6 +72,9 @@ export interface MapDoc {
   doors: Edge[];
   lights: Light[];
   objects: MapObject[];
+  notes: Note[];
+  /** Hintergrundgeschichte der Karte (vom Generator, frei bearbeitbar) */
+  story: string;
   layers: Record<LayerId, LayerState>;
 }
 
@@ -89,6 +104,8 @@ export function createMap(width: number, height: number, name: string, style: St
     doors: [],
     lights: [],
     objects: [],
+    notes: [],
+    story: '',
     layers: defaultLayers(),
   };
 }
@@ -300,6 +317,8 @@ export function resizeMap(m: MapDoc, width: number, height: number): MapDoc {
       return o.x + f.w <= next.width && o.y + f.h <= next.height;
     })
     .map((o) => ({ ...o }));
+  next.notes = m.notes.filter((n) => n.x < next.width && n.y < next.height).map((n) => ({ ...n }));
+  next.story = m.story;
   cleanupDoors(next);
   return next;
 }
@@ -323,7 +342,8 @@ export function deserialize(text: string): MapDoc {
     name: typeof raw.name === 'string' ? raw.name : '',
     width,
     height,
-    style: STYLES.includes(raw.style) ? raw.style : 'dungeon',
+    // „outdoor“ war der frühere gemeinsame Stil für Wald und Grasland
+    style: raw.style === 'outdoor' ? 'grassland' : STYLES.includes(raw.style) ? raw.style : 'dungeon',
     floor: raw.floor.map((v: unknown) => (Number.isInteger(v) && (v as number) >= 0 && (v as number) <= maxMat ? v : 0)),
     doors: Array.isArray(raw.doors)
       ? raw.doors
@@ -346,6 +366,19 @@ export function deserialize(text: string): MapDoc {
             rot: [0, 90, 180, 270].includes(o.rot) ? o.rot : 0,
           }))
       : [],
+    notes: Array.isArray(raw.notes)
+      ? raw.notes
+          .filter((n: any) => n && Number.isFinite(n.x) && Number.isFinite(n.y))
+          .map((n: any, i: number) => ({
+            id: typeof n.id === 'string' ? n.id : newId(),
+            n: Number.isInteger(n.n) ? n.n : i + 1,
+            x: n.x,
+            y: n.y,
+            title: typeof n.title === 'string' ? n.title : '',
+            text: typeof n.text === 'string' ? n.text : '',
+          }))
+      : [],
+    story: typeof raw.story === 'string' ? raw.story : '',
     layers: defaultLayers(),
   };
   if (raw.layers && typeof raw.layers === 'object') {
@@ -388,6 +421,8 @@ export function growInPlace(m: MapDoc, left: number, top: number, right: number,
   for (const d of m.doors) (d.x += left), (d.y += top);
   for (const l of m.lights) (l.x += left), (l.y += top);
   for (const o of m.objects) (o.x += left), (o.y += top);
+  for (const n of m.notes) (n.x += left), (n.y += top);
+  m.notes = m.notes.filter((n) => n.x >= 0 && n.y >= 0 && n.x < w && n.y < h);
   m.lights = m.lights.filter((l) => inBounds(m, l.x, l.y));
   m.objects = m.objects.filter((o) => {
     const f = footprint(o);

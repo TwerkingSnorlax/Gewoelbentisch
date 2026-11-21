@@ -9,25 +9,36 @@ z. B. für Encounter+ oder Foundry VTT.
 | Werkzeug | Taste | Bedienung |
 |---|---|---|
 | Verschieben | `1` | Ansicht ziehen (alternativ: Leertaste halten oder mittlere Maustaste) |
-| Auswahl | `2` | Objekt antippen und ziehen. Drehen `R`, Duplizieren `Strg/⌘ + D`, Löschen `Entf` |
+| Auswahl | `2` | Objekt antippen und ziehen; Leiste über dem Objekt: Drehen, Duplizieren, Löschen (auch `R`, `Strg/⌘ + D`, `Entf`) |
 | Raum | `3` | Rechteck ziehen. Modus *Hinzufügen/Entfernen* unten in der Statusleiste (`X`) |
 | Pinsel | `4` | Gänge frei malen. Rechte Maustaste radiert |
-| Radierer | `5` | Felder entfernen |
+| Radierer | `5` | Felder und Objekte entfernen |
 | Tür | `6` | Auf einen Durchgang tippen (Kante zwischen zwei Bodenfeldern) |
 | Licht | `7` | Lichtquelle auf ein Feld setzen oder entfernen |
 | Objekt | `8` | Objekt aus der Palette wählen und antippen. `R` dreht |
+| Marke | `9` | Nummerierte Raummarke setzen; antippen öffnet die Beschreibung |
 
 - **Bodenmaterialien:** Stein, Holz, Marmor, Erde, Wasser – unten in der Statusleiste bei Raum und Pinsel als kleine
   Vorschau mit echter Textur und Namen (im Außenbereich: Pflaster, Holzsteg, Steinplatten, Erdweg, Wasser).
-- **Stile** (Karte → Stil): Gewölbe, Tempel, Taverne, Höhle, Wald & Grasland. Bestimmen Fels, Wände und Standard-Boden.
-  **Wald & Grasland** ist freistehend: Die ganze Karte ist begehbare Wiese ohne automatische Wände; gemalt werden
-  Wege, Wasser oder Pflaster (mit weichen Rändern), Bäume blockieren im VTT die Sicht.
+- **Stile** (Karte → Stil): Gewölbe, Tempel, Taverne, Höhle, Wald, Grasland. Bestimmen Fels, Wände und Standard-Boden.
+  **Wald** ist geschlossen: Ein dichtes Blätterdach bildet die Ränder der Lichtungen (im VTT Wände).
+  **Grasland** ist freistehend: Die ganze Karte ist begehbare Wiese ohne automatische Wände; gemalt werden Wege, Wasser
+  oder Pflaster mit weichen Rändern. Fels-Felder zwischen zwei Räumen werden als massive Innenwand gezeichnet.
 - **Objekte:** 28 selbst gezeichnete Objekte in fünf Gruppen (Gewölbe & Tempel, Einrichtung, Lager, Feuer, Natur mit
-  Laub-, Nadel- und großem Baum, Busch, Baumstumpf, Baumstamm, Zelt). Säulen, Statuen, Felsbrocken und Bäume blockieren im VTT die Sicht; Kamin, Lagerfeuer und Feuerschale leuchten.
+  Laub-, Nadel- und großem Baum (gezackte Blattbüschel mit Schatten), Busch, Baumstumpf, Baumstamm, Zelt). Säulen, Statuen, Felsbrocken und Bäume blockieren im VTT die Sicht; Kamin, Lagerfeuer und Feuerschale leuchten.
 - **Ebenen:** Boden & Wände, Objekte, Türen, Lichter, Raster – jeweils ein- und ausblendbar und sperrbar.
   Ausgeblendete Ebenen fehlen auch im Export.
-- **Zufallsgenerator:** erzeugt eine komplette Karte im gewählten Stil mit Räumen, Gängen, Türen, Licht und Einrichtung.
-  Gleicher Startwert ergibt dieselbe Karte.
+- **Zufallsgenerator:** erzeugt eine komplette Karte mit Anfang und Ziel, Räumen mit Aufgabe und einer Geschichte:
+  - Gewölbe/Höhle: Eingang vom Kartenrand, Weg über Wachstube, Halle usw. zum Ziel (Grabkammer, Schatzkammer, Lager der
+    Bestie …), Nebenräume wie Lager, Kerker, Gruft; die Tür zum Ziel ist immer verschlossen.
+  - Tempel: Treppe vom Rand → Vorhalle → Hauptschiff mit Säulen → Allerheiligstes; Seitenräume (Kapelle, Priesterzellen,
+    Bibliothek, Sakristei, Krypta-Abgang).
+  - Taverne: Gebäude auf der Wiese mit Weg zum Eingang, Schankraum mit Theke und Kamin, dahinter Küche, Vorratskammer,
+    Treppe, Gästezimmer.
+  - Wald/Grasland: ein Weg von Rand zu Rand durch Lichtungen (Lager, Ruine, Teich, Hain, Jägerrast).
+  - Jeder Raum bekommt eine nummerierte **Raummarke** mit Titel und Beschreibung, die Karte einen Namen und eine
+    Hintergrundgeschichte. Alles steht unter **Räume** und lässt sich bearbeiten. Raummarken erscheinen im Editor und
+    im PNG, nicht im VTT-Bild (das sehen die Spieler). Gleicher Startwert ergibt dieselbe Karte.
 - Wände entstehen automatisch an den Rändern der Bodenflächen.
 - **Karte wächst automatisch** (Karte → Schalter, Vorgabe an): Wer über den Rand hinaus malt, einen Raum zieht oder
   Objekte und Lichter setzt, vergrößert die Karte in diese Richtung (auch nach links/oben, bis 200 Felder), mit
